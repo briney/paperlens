@@ -876,12 +876,19 @@ app/
 ## 11. Implementation Phases
 
 ### Phase 1: Foundation (Week 1-2)
-- [ ] Next.js project setup with TypeScript, Tailwind, shadcn/ui
-- [ ] PostgreSQL + Prisma schema, migrations
-- [ ] Redis + BullMQ setup
-- [ ] JWT auth system (register, login, logout, middleware)
-- [ ] Azure Blob Storage integration (with local file fallback for dev)
-- [ ] Basic UI layout (sidebar, header, routing)
+- [x] Next.js project setup with TypeScript, Tailwind, shadcn/ui
+- [x] PostgreSQL + Prisma schema, migrations
+- [x] Redis + BullMQ setup
+- [x] JWT auth system (register, login, logout, middleware)
+- [x] Azure Blob Storage integration (with local file fallback for dev)
+- [x] Basic UI layout (sidebar, header, routing)
+
+#### Phase 1 Deviations & Notes for Future Phases
+- **Prisma 7**: The installed version is Prisma 7.x, which removes `url` from the `datasource` block in `schema.prisma`. The connection URL is now configured in `prisma.config.ts`. The PrismaClient requires an adapter (`@prisma/adapter-pg`) instead of a direct connection string. This affects how the client is instantiated in `src/lib/db.ts`.
+- **Next.js 16 proxy**: Next.js 16 deprecated the `middleware.ts` file convention in favor of `proxy.ts` (renamed function export from `middleware` to `proxy`). The PLAN's auth section references `authMiddleware` — this is now at `src/proxy.ts` with a `proxy()` export. Same functionality, different naming.
+- **ioredis version**: BullMQ bundles its own version of ioredis. Do NOT install a standalone `ioredis` package — it causes type conflicts. Import from `bullmq/node_modules/ioredis` if needed outside the queue.
+- **shadcn/ui Toast → Sonner**: The `toast` component is deprecated in shadcn/ui. Using `sonner` instead (same API pattern, already installed).
+- **Docker networking**: `docker-compose.yml` uses `network_mode: host` instead of port mapping due to environment constraints. Postgres is on port 5432 and Redis on port 6379 on the host directly.
 
 ### Phase 2: Core Pipeline (Week 2-3)
 - [ ] PDF upload endpoint + storage

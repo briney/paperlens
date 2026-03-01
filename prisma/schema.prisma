@@ -1,0 +1,173 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Auth ───────────────────────────────────────────────
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String? // null when using OAuth
+  name         String?
+  role         Role      @default(USER)
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  papers       Paper[]
+  jobs         Job[]
+  apiTokens    ApiToken[]
+  usageRecords UsageRecord[]
+  quota        UserQuota?
+}
+
+model ApiToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  token     String    @unique
+  name      String
+  expiresAt DateTime?
+  createdAt DateTime  @default(now())
+}
+
+model UserQuota {
+  id                String @id @default(cuid())
+  userId            String @unique
+  user              User   @relation(fields: [userId], references: [id])
+  maxPapersPerDay   Int    @default(10)
+  maxPapersPerMonth Int    @default(100)
+  maxTokensPerMonth Int    @default(1000000)
+  tier              Tier   @default(FREE)
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum Tier {
+  FREE
+  PRO
+  ADMIN
+}
+
+// ─── Papers & Analysis ──────────────────────────────────
+
+model Paper {
+  id          String     @id @default(cuid())
+  userId      String
+  user        User       @relation(fields: [userId], references: [id])
+  title       String?
+  authors     String?
+  source      SourceType
+  sourceUrl   String? // original URL if provided
+  storagePath String // blob storage path to PDF
+  markupPath  String? // blob storage path to parsed markup
+  metadata    Json? // extracted metadata (doi, journal, date, etc.)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  jobs     Job[]
+  analyses Analysis[]
+}
+
+enum SourceType {
+  UPLOAD
+  PDF_URL
+  PAGE_URL
+}
+
+model Job {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  paperId     String
+  paper       Paper     @relation(fields: [paperId], references: [id])
+  type        JobType
+  status      JobStatus @default(QUEUED)
+  config      Json? // model selection, parameters, etc.
+  result      Json? // output metadata
+  error       String?
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  analysis Analysis?
+}
+
+enum JobType {
+  PARSE_PDF
+  SUMMARIZE
+  PEER_REVIEW
+  CLAIM_VERIFY
+  JOURNAL_CLUB
+  NOVELTY_ASSESS
+  CUSTOM
+}
+
+enum JobStatus {
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+model Analysis {
+  id          String  @id @default(cuid())
+  paperId     String
+  paper       Paper   @relation(fields: [paperId], references: [id])
+  jobId       String  @unique
+  job         Job     @relation(fields: [jobId], references: [id])
+  type        JobType
+  modelUsed   String // e.g. "mistral-document-ai-2512", "claude-sonnet-4-5"
+  content     String // the actual analysis output (markdown)
+  storagePath String? // optional blob storage for large outputs
+  tokenUsage  Json? // { input: N, output: N, cost: N }
+  createdAt   DateTime @default(now())
+}
+
+// ─── Usage Tracking ─────────────────────────────────────
+
+model UsageRecord {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id])
+  model        String
+  inputTokens  Int
+  outputTokens Int
+  cost         Float    @default(0)
+  jobType      JobType
+  createdAt    DateTime @default(now())
+}
+
+// ─── Model Registry (Admin-managed) ────────────────────
+
+model ModelConfig {
+  id                 String        @id @default(cuid())
+  slug               String        @unique // e.g. "mistral-doc-ai", "claude-sonnet"
+  displayName        String
+  provider           String // "azure-foundry"
+  deploymentName     String // Azure deployment name
+  endpoint           String // Azure endpoint URL
+  apiVersion         String
+  category           ModelCategory
+  isDefault          Boolean       @default(false)
+  isActive           Boolean       @default(true)
+  capabilities       Json? // { "tools": true, "webSearch": true, "vision": true }
+  costPerInputToken  Float         @default(0)
+  costPerOutputToken Float         @default(0)
+  maxTokens          Int           @default(4096)
+  config             Json? // additional model-specific config
+}
+
+enum ModelCategory {
+  DOCUMENT_PARSER
+  CHAT_COMPLETION
+  EMBEDDING
+}
