@@ -1,3 +1,4 @@
+import { prisma } from "@/lib/db";
 import type {
   AIProvider,
   Message,
@@ -117,8 +118,10 @@ export class AzureFoundryProvider implements AIProvider {
     messages: Message[],
     options?: CompletionOptions
   ): Promise<CompletionResult> {
+    const deployment = await this.resolveDeployment(options?.modelSlug);
+
     const body: Record<string, unknown> = {
-      model: this.completionDeployment,
+      model: deployment,
       messages: messages.map((m) => ({ role: m.role, content: m.content })),
     };
 
@@ -146,7 +149,17 @@ export class AzureFoundryProvider implements AIProvider {
     const content: string = data.choices?.[0]?.message?.content ?? "";
     const usage = this.extractUsage(data);
 
-    return { content, usage, model: this.completionDeployment };
+    return { content, usage, model: deployment };
+  }
+
+  private async resolveDeployment(modelSlug?: string): Promise<string> {
+    if (!modelSlug) return this.completionDeployment;
+
+    const model = await prisma.modelConfig.findUnique({
+      where: { slug: modelSlug, isActive: true },
+    });
+
+    return model?.deploymentName ?? this.completionDeployment;
   }
 
   private extractUsage(data: Record<string, unknown>): TokenUsage {

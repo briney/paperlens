@@ -37,6 +37,9 @@ export default async function PapersPage() {
         orderBy: { createdAt: "desc" },
         take: 1,
       },
+      _count: {
+        select: { analyses: true },
+      },
     },
     orderBy: { createdAt: "desc" },
   });
@@ -101,6 +104,12 @@ export default async function PapersPage() {
                           <span>{SOURCE_LABELS[paper.source] ?? paper.source}</span>
                           <span>&middot;</span>
                           <span>{paper.createdAt.toLocaleDateString()}</span>
+                          {paper._count.analyses > 0 && (
+                            <>
+                              <span>&middot;</span>
+                              <span>{paper._count.analyses} {paper._count.analyses === 1 ? "analysis" : "analyses"}</span>
+                            </>
+                          )}
                           {paper.sourceUrl && (
                             <>
                               <span>&middot;</span>

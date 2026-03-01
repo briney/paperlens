@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   Card,
@@ -13,8 +13,21 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Upload, FileText, Link as LinkIcon, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
+
+interface Model {
+  slug: string;
+  displayName: string;
+  isDefault: boolean;
+}
 
 type UploadState = "idle" | "uploading" | "success" | "error";
 
@@ -29,6 +42,21 @@ export default function UploadPage() {
   const [dragOver, setDragOver] = useState(false);
   const [url, setUrl] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [models, setModels] = useState<Model[]>([]);
+  const [selectedModel, setSelectedModel] = useState<string>("");
+
+  useEffect(() => {
+    fetch("/api/models")
+      .then((res) => res.json())
+      .then((data) => {
+        const list: Model[] = data.models ?? [];
+        setModels(list);
+        const defaultModel = list.find((m) => m.isDefault);
+        if (defaultModel) setSelectedModel(defaultModel.slug);
+        else if (list.length > 0) setSelectedModel(list[0].slug);
+      })
+      .catch(() => {});
+  }, []);
 
   const resetState = useCallback(() => {
     setUploadState("idle");
@@ -284,6 +312,30 @@ export default function UploadPage() {
           <p className="text-xs text-muted-foreground text-center">
             Supports arXiv, bioRxiv, medRxiv, DOI links, and direct PDF URLs.
           </p>
+
+          {models.length > 1 && (
+            <div className="pt-2 border-t">
+              <label className="text-sm font-medium mb-1.5 block">
+                Analysis Model
+              </label>
+              <Select value={selectedModel} onValueChange={setSelectedModel}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select model" />
+                </SelectTrigger>
+                <SelectContent>
+                  {models.map((model) => (
+                    <SelectItem key={model.slug} value={model.slug}>
+                      {model.displayName}
+                      {model.isDefault ? " (default)" : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">
+                Model used for auto-summarization after upload.
+              </p>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

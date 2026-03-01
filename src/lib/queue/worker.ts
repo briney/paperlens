@@ -5,6 +5,7 @@ import { getStorage } from "@/lib/storage";
 import { getAIProvider } from "@/lib/ai/provider";
 import { resolveUrl, downloadPdf } from "@/lib/ingestion/url-resolver";
 import { validatePdfBytes } from "@/lib/ingestion/pdf-validator";
+import { getAnalyzer } from "@/lib/analyzers";
 import { paperQueue } from "./index";
 import type {
   PaperJobName,
@@ -129,6 +130,117 @@ async function handleParsePdf(job: Job<ParsePdfJobData>) {
       },
     },
   });
+
+  // Auto-enqueue summarization
+  const summarizeJob = await prisma.job.create({
+    data: {
+      userId,
+      paperId,
+      type: "SUMMARIZE",
+      status: "QUEUED",
+    },
+  });
+
+  await paperQueue.add(
+    "run-analysis",
+    {
+      paperId,
+      jobId: summarizeJob.id,
+      analyzerType: "SUMMARIZE",
+      userId,
+    },
+    { jobId: summarizeJob.id }
+  );
+}
+
+async function handleRunAnalysis(job: Job<RunAnalysisJobData>) {
+  const { paperId, jobId, analyzerType, modelSlug, userId } = job.data;
+
+  // Mark job as processing
+  await prisma.job.update({
+    where: { id: jobId },
+    data: { status: "PROCESSING", startedAt: new Date() },
+  });
+
+  // Load analyzer from registry
+  const analyzer = getAnalyzer(analyzerType);
+  if (!analyzer) {
+    throw new Error(`Unknown analyzer type: ${analyzerType}`);
+  }
+
+  // Load paper
+  const paper = await prisma.paper.findUniqueOrThrow({
+    where: { id: paperId },
+  });
+
+  if (!paper.markupPath) {
+    throw new Error("Paper has no parsed markup yet");
+  }
+
+  // Load markup from storage
+  const storage = getStorage();
+  const markupBuffer = await storage.download(paper.markupPath);
+  const markup = markupBuffer.toString("utf-8");
+
+  // Get AI provider and execute analyzer
+  const provider = await getAIProvider();
+  const result = await analyzer.execute({
+    paper: {
+      id: paper.id,
+      title: paper.title,
+      authors: paper.authors,
+      metadata: paper.metadata as Record<string, unknown> | null,
+    },
+    markup,
+    ai: provider,
+    modelSlug,
+  });
+
+  // Store analysis content in blob storage
+  const analysisPath = paper.markupPath.replace(/\.md$/, `-${analyzerType.toLowerCase()}.md`);
+  await storage.upload(analysisPath, Buffer.from(result.content, "utf-8"), "text/markdown");
+
+  // Create Analysis record
+  await prisma.analysis.create({
+    data: {
+      paperId,
+      jobId,
+      type: analyzerType as "SUMMARIZE",
+      modelUsed: result.model,
+      content: result.content,
+      storagePath: analysisPath,
+      tokenUsage: {
+        input: result.usage.inputTokens,
+        output: result.usage.outputTokens,
+      },
+    },
+  });
+
+  // Create usage record
+  await prisma.usageRecord.create({
+    data: {
+      userId,
+      model: result.model,
+      inputTokens: result.usage.inputTokens,
+      outputTokens: result.usage.outputTokens,
+      cost: 0,
+      jobType: analyzerType as "SUMMARIZE",
+    },
+  });
+
+  // Mark job as completed
+  await prisma.job.update({
+    where: { id: jobId },
+    data: {
+      status: "COMPLETED",
+      completedAt: new Date(),
+      result: {
+        model: result.model,
+        inputTokens: result.usage.inputTokens,
+        outputTokens: result.usage.outputTokens,
+      },
+    },
+  });
 }
 
 export function createPaperWorker() {
@@ -144,11 +256,9 @@ export function createPaperWorker() {
         case "parse-pdf":
           await handleParsePdf(job as Job<ParsePdfJobData>);
           break;
-        case "run-analysis": {
-          const _data = job.data as RunAnalysisJobData;
-          // TODO (Phase 3): Implement analysis execution
-          throw new Error("run-analysis not yet implemented");
-        }
+        case "run-analysis":
+          await handleRunAnalysis(job as Job<RunAnalysisJobData>);
+          break;
         default:
           throw new Error(`Unknown job type: ${name}`);
       }
