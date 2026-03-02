@@ -891,39 +891,39 @@ app/
 - **Docker networking**: `docker-compose.yml` uses `network_mode: host` instead of port mapping due to environment constraints. Postgres is on port 5432 and Redis on port 6379 on the host directly.
 
 ### Phase 2: Core Pipeline (Week 2-3)
-- [ ] PDF upload endpoint + storage
-- [ ] URL fetching (direct PDF + page scraping for PDF links)
-- [ ] AI Provider abstraction + Azure Foundry implementation
-- [ ] Mistral Document AI integration for PDF parsing
-- [ ] Job queue workers for parse pipeline
-- [ ] Upload page UI
-- [ ] Processing status UI (real-time updates via SSE or polling)
+- [x] PDF upload endpoint + storage
+- [x] URL fetching (direct PDF + page scraping for PDF links)
+- [x] AI Provider abstraction + Azure Foundry implementation
+- [x] Mistral Document AI integration for PDF parsing
+- [x] Job queue workers for parse pipeline
+- [x] Upload page UI
+- [x] Processing status UI (real-time updates via SSE or polling)
 
 ### Phase 3: Summarization (Week 3-4)
-- [ ] Analyzer plugin system + registry
-- [ ] Summarizer analyzer implementation
-- [ ] Model selection UI (dropdown tied to ModelConfig table)
-- [ ] Results page with tabs (Summary / Markup / PDF)
-- [ ] Download functionality (.md, .zip)
-- [ ] Paper library page
+- [x] Analyzer plugin system + registry
+- [x] Summarizer analyzer implementation
+- [x] Model selection UI (dropdown tied to ModelConfig table)
+- [x] Results page with tabs (Summary / Markup / PDF)
+- [x] Download functionality (.md) — .zip not yet implemented
+- [x] Paper library page
 
 ### Phase 4: Admin Console (Week 4-5)
-- [ ] Admin route protection (role-based)
-- [ ] Admin dashboard (usage stats, recent jobs)
-- [ ] User management (list, activate/deactivate, change role)
-- [ ] Model management (CRUD on ModelConfig)
-- [ ] Quota management (per-user and tier-based)
-- [ ] Job queue monitoring
-- [ ] Usage tracking and cost estimation
+- [x] Admin route protection (role-based)
+- [x] Admin dashboard (usage stats, recent jobs)
+- [x] User management (list, activate/deactivate, change role)
+- [x] Model management (CRUD on ModelConfig)
+- [x] Quota management (per-user and tier-based)
+- [x] Job queue monitoring
+- [x] Usage tracking and cost estimation
 
 ### Phase 5: Polish & Hardening (Week 5-6)
-- [ ] Error handling throughout (retries, graceful failures)
-- [ ] Rate limiting on API routes
-- [ ] Input validation (file size, file type, URL patterns)
-- [ ] Loading states, empty states, error states for all pages
-- [ ] Mobile responsiveness
-- [ ] Keyboard shortcuts (⌘K for search)
-- [ ] Toast notifications for async job completion
+- [x] Error handling throughout (retries, graceful failures)
+- [x] Rate limiting on API routes
+- [x] Input validation (file size, file type, URL patterns)
+- [x] Loading states, empty states, error states for all pages
+- [x] Mobile responsiveness
+- [x] Keyboard shortcuts (⌘K for search)
+- [x] Toast notifications for async job completion
 
 ### Phase 6: Expansion (Ongoing)
 - [ ] OAuth migration (NextAuth.js + GitHub/Google providers)
