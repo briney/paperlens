@@ -190,7 +190,7 @@ export class AzureFoundryProvider implements AIProvider {
           deploymentName: modelName,
           apiVersion: this.fallbackApiVersion,
           baseUrl: this.fallbackEndpoint,
-          invokePath: "/chat/completions",
+          invokePath: `/openai/deployments/${modelName}/chat/completions`,
         },
       };
     }
