@@ -28,6 +28,7 @@ Guidelines:
 
 const summarizer: Analyzer = {
   type: "SUMMARIZE",
+  taskType: "SUMMARIZE",
   displayName: "Summary",
   description: "Generates a structured summary of the paper including key findings, methods, significance, limitations, and context.",
   requiresParsedMarkup: true,
@@ -43,6 +44,7 @@ const summarizer: Analyzer = {
       ],
       {
         modelSlug,
+        taskType: "SUMMARIZE",
         temperature: 0.3,
         maxTokens: 4096,
       }

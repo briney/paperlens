@@ -9,14 +9,14 @@ datasource db {
 // ─── Auth ───────────────────────────────────────────────
 
 model User {
-  id           String    @id @default(cuid())
-  email        String    @unique
+  id           String   @id @default(cuid())
+  email        String   @unique
   passwordHash String? // null when using OAuth
   name         String?
-  role         Role      @default(USER)
-  isActive     Boolean   @default(true)
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  role         Role     @default(USER)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   papers       Paper[]
   jobs         Job[]
@@ -119,11 +119,11 @@ enum JobStatus {
 }
 
 model Analysis {
-  id          String  @id @default(cuid())
+  id          String   @id @default(cuid())
   paperId     String
-  paper       Paper   @relation(fields: [paperId], references: [id])
-  jobId       String  @unique
-  job         Job     @relation(fields: [jobId], references: [id])
+  paper       Paper    @relation(fields: [paperId], references: [id])
+  jobId       String   @unique
+  job         Job      @relation(fields: [jobId], references: [id])
   type        JobType
   modelUsed   String // e.g. "mistral-document-ai-2512", "claude-sonnet-4-5"
   content     String // the actual analysis output (markdown)
@@ -149,25 +149,57 @@ model UsageRecord {
 // ─── Model Registry (Admin-managed) ────────────────────
 
 model ModelConfig {
-  id                 String        @id @default(cuid())
-  slug               String        @unique // e.g. "mistral-doc-ai", "claude-sonnet"
+  id                 String         @id @default(cuid())
+  slug               String         @unique // e.g. "mistral-doc-ai", "claude-sonnet"
   displayName        String
   provider           String // "azure-foundry"
   deploymentName     String // Azure deployment name
-  endpoint           String // Azure endpoint URL
-  apiVersion         String
+  endpoint           String // legacy endpoint URL (deprecated)
+  apiVersion         String?
+  apiStyle           ModelApiStyle  @default(AZURE_CHAT_COMPLETIONS)
+  authStyle          ModelAuthStyle @default(API_KEY)
+  baseUrl            String?
+  invokePath         String?
+  targetUri          String?
+  extraHeaders       Json?
+  supportedTasks     Json? // ["PARSE_PDF", "SUMMARIZE", ...]
   category           ModelCategory
-  isDefault          Boolean       @default(false)
-  isActive           Boolean       @default(true)
+  isDefault          Boolean        @default(false)
+  isActive           Boolean        @default(true)
   capabilities       Json? // { "tools": true, "webSearch": true, "vision": true }
-  costPerInputToken  Float         @default(0)
-  costPerOutputToken Float         @default(0)
-  maxTokens          Int           @default(4096)
+  costPerInputToken  Float          @default(0)
+  costPerOutputToken Float          @default(0)
+  maxTokens          Int            @default(4096)
   config             Json? // additional model-specific config
+
+  taskDefaults TaskModelPolicy[] @relation("TaskDefaultModel")
 }
 
 enum ModelCategory {
   DOCUMENT_PARSER
   CHAT_COMPLETION
   EMBEDDING
+}
+
+enum ModelApiStyle {
+  AZURE_CHAT_COMPLETIONS
+  ANTHROPIC_MESSAGES
+  FULL_TARGET_URI
+}
+
+enum ModelAuthStyle {
+  API_KEY
+  X_API_KEY
+}
+
+model TaskModelPolicy {
+  id                 String       @id @default(cuid())
+  taskType           JobType      @unique
+  defaultModelSlug   String?
+  defaultModel       ModelConfig? @relation("TaskDefaultModel", fields: [defaultModelSlug], references: [slug], onDelete: SetNull, onUpdate: Cascade)
+  allowUserOverride  Boolean      @default(true)
+  fallbackModelSlugs Json?
+  constraints        Json?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
 }

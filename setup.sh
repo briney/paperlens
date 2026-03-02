@@ -407,9 +407,9 @@ generate_secret JWT_REFRESH_SECRET "JWT_REFRESH_SECRET"
 success "JWT secrets configured"
 
 # ── Azure AI Foundry ──────────────────────────────────────────────────────────
-header "Azure AI Foundry — document parsing and summarization"
+header "Azure AI Foundry — API key + optional fallback endpoint"
 
-prompt_value AZURE_AI_FOUNDRY_ENDPOINT "Endpoint URL" "" false true
+prompt_value AZURE_AI_FOUNDRY_ENDPOINT "Fallback endpoint URL (optional)" "" false false
 prompt_value AZURE_AI_FOUNDRY_KEY "API key" "" true true
 prompt_value AZURE_AI_FOUNDRY_API_VERSION "API version" "2025-01-01" false false
 success "Azure AI Foundry configured"
@@ -476,7 +476,7 @@ header "Validation"
 
 ERRORS=0
 
-for var in DATABASE_URL REDIS_URL JWT_SECRET JWT_REFRESH_SECRET AZURE_AI_FOUNDRY_ENDPOINT AZURE_AI_FOUNDRY_KEY; do
+for var in DATABASE_URL REDIS_URL JWT_SECRET JWT_REFRESH_SECRET AZURE_AI_FOUNDRY_KEY; do
     if [[ -z "${COLLECTED[$var]:-}" ]]; then
         error "Missing required variable: $var"
         ((ERRORS++))
@@ -525,8 +525,12 @@ HEADER
     echo "JWT_REFRESH_SECRET=\"${COLLECTED[JWT_REFRESH_SECRET]}\""
 
     echo ""
-    echo "# -- Azure AI Foundry (document parsing & summarization) ---------------------"
-    echo "AZURE_AI_FOUNDRY_ENDPOINT=\"${COLLECTED[AZURE_AI_FOUNDRY_ENDPOINT]}\""
+    echo "# -- Azure AI Foundry (key + optional fallback endpoint) ---------------------"
+    if [[ -n "${COLLECTED[AZURE_AI_FOUNDRY_ENDPOINT]:-}" ]]; then
+        echo "AZURE_AI_FOUNDRY_ENDPOINT=\"${COLLECTED[AZURE_AI_FOUNDRY_ENDPOINT]}\""
+    else
+        echo "# AZURE_AI_FOUNDRY_ENDPOINT=\"https://your-resource.services.ai.azure.com\""
+    fi
     echo "AZURE_AI_FOUNDRY_KEY=\"${COLLECTED[AZURE_AI_FOUNDRY_KEY]}\""
     if [[ -n "${COLLECTED[AZURE_AI_FOUNDRY_API_VERSION]:-}" ]] && [[ "${COLLECTED[AZURE_AI_FOUNDRY_API_VERSION]}" != "2025-01-01" ]]; then
         echo "AZURE_AI_FOUNDRY_API_VERSION=\"${COLLECTED[AZURE_AI_FOUNDRY_API_VERSION]}\""

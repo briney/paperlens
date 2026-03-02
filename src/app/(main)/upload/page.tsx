@@ -46,7 +46,7 @@ export default function UploadPage() {
   const [selectedModel, setSelectedModel] = useState<string>("");
 
   useEffect(() => {
-    fetch("/api/models")
+    fetch("/api/models?taskType=SUMMARIZE")
       .then((res) => res.json())
       .then((data) => {
         const list: Model[] = data.models ?? [];
@@ -90,6 +90,9 @@ export default function UploadPage() {
 
     const formData = new FormData();
     formData.append("file", file);
+    if (selectedModel) {
+      formData.append("summaryModelSlug", selectedModel);
+    }
 
     try {
       setProgress(30);
@@ -140,7 +143,10 @@ export default function UploadPage() {
       const response = await fetch("/api/papers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({
+          url,
+          summaryModelSlug: selectedModel || undefined,
+        }),
       });
 
       setProgress(80);

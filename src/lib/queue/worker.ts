@@ -3,6 +3,7 @@ import { redis } from "@/lib/redis";
 import { prisma } from "@/lib/db";
 import { getStorage } from "@/lib/storage";
 import { getAIProvider } from "@/lib/ai/provider";
+import type { AIProvider } from "@/lib/ai/types";
 import { resolveUrl, downloadPdf } from "@/lib/ingestion/url-resolver";
 import { validatePdfBytes } from "@/lib/ingestion/pdf-validator";
 import { getAnalyzer } from "@/lib/analyzers";
@@ -15,7 +16,7 @@ import type {
 } from "./index";
 
 async function handleFetchUrl(job: Job<FetchUrlJobData>) {
-  const { paperId, url, userId } = job.data;
+  const { paperId, url, userId, parseModelSlug, summaryModelSlug } = job.data;
 
   // Mark job as processing
   await prisma.job.update({
@@ -63,18 +64,21 @@ async function handleFetchUrl(job: Job<FetchUrlJobData>) {
       paperId,
       type: "PARSE_PDF",
       status: "QUEUED",
+      config: parseModelSlug || summaryModelSlug
+        ? { parseModelSlug, summaryModelSlug }
+        : undefined,
     },
   });
 
   await paperQueue.add(
     "parse-pdf",
-    { paperId, storagePath, userId },
+    { paperId, storagePath, userId, parseModelSlug, summaryModelSlug },
     { jobId: parseJob.id }
   );
 }
 
 async function handleParsePdf(job: Job<ParsePdfJobData>) {
-  const { paperId, storagePath, userId } = job.data;
+  const { paperId, storagePath, userId, parseModelSlug, summaryModelSlug } = job.data;
 
   // Mark job as processing
   await prisma.job.update({
@@ -88,7 +92,10 @@ async function handleParsePdf(job: Job<ParsePdfJobData>) {
 
   // Call AI provider to parse the document
   const provider = await getAIProvider();
-  const result = await provider.parseDocument(pdfBuffer);
+  const result = await provider.parseDocument(pdfBuffer, {
+    taskType: "PARSE_PDF",
+    modelSlug: parseModelSlug,
+  });
 
   // Store parsed markup in storage
   const markupPath = storagePath.replace(/\.pdf$/, ".md");
@@ -138,6 +145,7 @@ async function handleParsePdf(job: Job<ParsePdfJobData>) {
       paperId,
       type: "SUMMARIZE",
       status: "QUEUED",
+      config: summaryModelSlug ? { modelSlug: summaryModelSlug } : undefined,
     },
   });
 
@@ -147,6 +155,7 @@ async function handleParsePdf(job: Job<ParsePdfJobData>) {
       paperId,
       jobId: summarizeJob.id,
       analyzerType: "SUMMARIZE",
+      modelSlug: summaryModelSlug,
       userId,
     },
     { jobId: summarizeJob.id }
@@ -184,6 +193,19 @@ async function handleRunAnalysis(job: Job<RunAnalysisJobData>) {
 
   // Get AI provider and execute analyzer
   const provider = await getAIProvider();
+  const taskScopedProvider: AIProvider = {
+    parseDocument: (pdfBuffer, options) =>
+      provider.parseDocument(pdfBuffer, {
+        ...options,
+        taskType: options?.taskType ?? "PARSE_PDF",
+      }),
+    complete: (messages, options) =>
+      provider.complete(messages, {
+        ...options,
+        taskType: options?.taskType ?? analyzer.taskType,
+      }),
+  };
+
   const result = await analyzer.execute({
     paper: {
       id: paper.id,
@@ -192,7 +214,7 @@ async function handleRunAnalysis(job: Job<RunAnalysisJobData>) {
       metadata: paper.metadata as Record<string, unknown> | null,
     },
     markup,
-    ai: provider,
+    ai: taskScopedProvider,
     modelSlug,
   });
 
@@ -205,7 +227,7 @@ async function handleRunAnalysis(job: Job<RunAnalysisJobData>) {
     data: {
       paperId,
       jobId,
-      type: analyzerType as "SUMMARIZE",
+      type: analyzer.taskType,
       modelUsed: result.model,
       content: result.content,
       storagePath: analysisPath,
@@ -224,7 +246,7 @@ async function handleRunAnalysis(job: Job<RunAnalysisJobData>) {
       inputTokens: result.usage.inputTokens,
       outputTokens: result.usage.outputTokens,
       cost: 0,
-      jobType: analyzerType as "SUMMARIZE",
+      jobType: analyzer.taskType,
     },
   });
 

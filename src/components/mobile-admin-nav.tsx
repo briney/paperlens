@@ -11,6 +11,7 @@ import {
   Gauge,
   ListTodo,
   ArrowLeft,
+  Route,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,6 +28,7 @@ const navItems = [
   { href: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/admin/users", label: "Users", icon: Users },
   { href: "/admin/models", label: "Models", icon: Cpu },
+  { href: "/admin/task-policies", label: "Task Policies", icon: Route },
   { href: "/admin/quotas", label: "Quotas", icon: Gauge },
   { href: "/admin/jobs", label: "Jobs", icon: ListTodo },
 ];

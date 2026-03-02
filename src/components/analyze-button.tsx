@@ -36,7 +36,7 @@ export function AnalyzeButton({
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    fetch("/api/models")
+    fetch(`/api/models?taskType=${encodeURIComponent(analyzerType)}`)
       .then((res) => res.json())
       .then((data) => {
         const list: Model[] = data.models ?? [];
@@ -48,7 +48,7 @@ export function AnalyzeButton({
       .catch(() => {
         // Models endpoint not available — proceed without model selection
       });
-  }, []);
+  }, [analyzerType]);
 
   const handleAnalyze = async () => {
     setLoading(true);

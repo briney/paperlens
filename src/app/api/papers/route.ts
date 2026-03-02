@@ -3,10 +3,11 @@ import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { paperQueue } from "@/lib/queue";
 import { getStorage } from "@/lib/storage";
-import { validatePdfBytes, getMaxUploadSizeMB } from "@/lib/ingestion/pdf-validator";
+import { validatePdfBytes } from "@/lib/ingestion/pdf-validator";
 import { withErrorHandler } from "@/lib/api-utils";
 import { isAllowedPaperUrl } from "@/lib/validation";
 import { rateLimit } from "@/lib/rate-limit";
+import { ModelRoutingError, resolveTaskModel } from "@/lib/ai/model-routing";
 
 export const POST = withErrorHandler(async (request: NextRequest) => {
   const user = await getCurrentUser();
@@ -52,6 +53,23 @@ async function handlePdfUpload(request: NextRequest, userId: string) {
     return NextResponse.json({ error: "Only PDF files are accepted" }, { status: 400 });
   }
 
+  const parseModelSlug = toOptionalString(formData.get("parseModelSlug"));
+  const summaryModelSlug = toOptionalString(formData.get("summaryModelSlug"));
+
+  try {
+    if (parseModelSlug) {
+      await resolveTaskModel({ taskType: "PARSE_PDF", requestedModelSlug: parseModelSlug });
+    }
+    if (summaryModelSlug) {
+      await resolveTaskModel({ taskType: "SUMMARIZE", requestedModelSlug: summaryModelSlug });
+    }
+  } catch (error) {
+    if (error instanceof ModelRoutingError) {
+      return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
+    }
+    throw error;
+  }
+
   const arrayBuffer = await file.arrayBuffer();
   const buffer = Buffer.from(arrayBuffer);
 
@@ -82,6 +100,9 @@ async function handlePdfUpload(request: NextRequest, userId: string) {
       paperId: paper.id,
       type: "PARSE_PDF",
       status: "QUEUED",
+      config: parseModelSlug || summaryModelSlug
+        ? { parseModelSlug, summaryModelSlug }
+        : undefined,
     },
   });
 
@@ -90,20 +111,24 @@ async function handlePdfUpload(request: NextRequest, userId: string) {
     paperId: paper.id,
     storagePath,
     userId,
+    parseModelSlug,
+    summaryModelSlug,
   }, { jobId: job.id });
 
   return NextResponse.json({ paper, job }, { status: 201 });
 }
 
 async function handleUrlSubmission(request: NextRequest, userId: string) {
-  let body: { url?: string };
+  let body: { url?: string; parseModelSlug?: string; summaryModelSlug?: string };
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { url } = body;
+  const url = body.url;
+  const parseModelSlug = normalizeOptionalString(body.parseModelSlug);
+  const summaryModelSlug = normalizeOptionalString(body.summaryModelSlug);
   if (!url || typeof url !== "string") {
     return NextResponse.json({ error: "URL is required" }, { status: 400 });
   }
@@ -120,6 +145,20 @@ async function handleUrlSubmission(request: NextRequest, userId: string) {
       { error: "URL domain is not in the allowed list. Supported sources include arXiv, bioRxiv, Nature, Science, PubMed, and other major publishers." },
       { status: 400 }
     );
+  }
+
+  try {
+    if (parseModelSlug) {
+      await resolveTaskModel({ taskType: "PARSE_PDF", requestedModelSlug: parseModelSlug });
+    }
+    if (summaryModelSlug) {
+      await resolveTaskModel({ taskType: "SUMMARIZE", requestedModelSlug: summaryModelSlug });
+    }
+  } catch (error) {
+    if (error instanceof ModelRoutingError) {
+      return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
+    }
+    throw error;
   }
 
   // Determine source type: if URL ends with .pdf, it's a direct PDF URL
@@ -142,6 +181,9 @@ async function handleUrlSubmission(request: NextRequest, userId: string) {
       paperId: paper.id,
       type: "PARSE_PDF",
       status: "QUEUED",
+      config: parseModelSlug || summaryModelSlug
+        ? { parseModelSlug, summaryModelSlug }
+        : undefined,
     },
   });
 
@@ -150,6 +192,8 @@ async function handleUrlSubmission(request: NextRequest, userId: string) {
     paperId: paper.id,
     url,
     userId,
+    parseModelSlug,
+    summaryModelSlug,
   }, { jobId: job.id });
 
   return NextResponse.json({ paper, job }, { status: 201 });
@@ -174,3 +218,14 @@ export const GET = withErrorHandler(async () => {
 
   return NextResponse.json({ papers });
 });
+
+function toOptionalString(value: FormDataEntryValue | null): string | undefined {
+  if (typeof value !== "string") return undefined;
+  return normalizeOptionalString(value);
+}
+
+function normalizeOptionalString(value: string | undefined): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}

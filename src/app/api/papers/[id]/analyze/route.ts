@@ -6,6 +6,7 @@ import { getAnalyzer } from "@/lib/analyzers";
 import { withErrorHandler } from "@/lib/api-utils";
 import { isValidCuid } from "@/lib/validation";
 import { rateLimit } from "@/lib/rate-limit";
+import { ModelRoutingError, resolveTaskModel } from "@/lib/ai/model-routing";
 
 export const POST = withErrorHandler(async (
   request: NextRequest,
@@ -61,11 +62,16 @@ export const POST = withErrorHandler(async (
 
   // Validate model if specified
   if (modelSlug) {
-    const model = await prisma.modelConfig.findFirst({
-      where: { slug: modelSlug, isActive: true, category: "CHAT_COMPLETION" },
-    });
-    if (!model) {
-      return NextResponse.json({ error: "Invalid or inactive model" }, { status: 400 });
+    try {
+      await resolveTaskModel({
+        taskType: analyzer.taskType,
+        requestedModelSlug: modelSlug,
+      });
+    } catch (error) {
+      if (error instanceof ModelRoutingError) {
+        return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
+      }
+      throw error;
     }
   }
 
@@ -74,7 +80,7 @@ export const POST = withErrorHandler(async (
     data: {
       userId: user.id,
       paperId: id,
-      type: analyzerType as "SUMMARIZE",
+      type: analyzer.taskType,
       status: "QUEUED",
       config: modelSlug ? { modelSlug } : undefined,
     },

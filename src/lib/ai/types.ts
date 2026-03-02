@@ -1,3 +1,5 @@
+import type { JobType } from "@prisma/client";
+
 export interface Message {
   role: "system" | "user" | "assistant";
   content: string;
@@ -26,10 +28,12 @@ export interface CompletionResult {
 
 export interface ParseOptions {
   modelSlug?: string;
+  taskType?: JobType;
 }
 
 export interface CompletionOptions {
   modelSlug?: string;
+  taskType?: JobType;
   maxTokens?: number;
   temperature?: number;
 }

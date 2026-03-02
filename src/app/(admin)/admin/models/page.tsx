@@ -43,6 +43,7 @@ export default async function AdminModelsPage() {
               <TableRow>
                 <TableHead>Name</TableHead>
                 <TableHead>Category</TableHead>
+                <TableHead className="hidden md:table-cell">API Style</TableHead>
                 <TableHead className="hidden md:table-cell">Deployment</TableHead>
                 <TableHead>Default</TableHead>
                 <TableHead>Active</TableHead>
@@ -63,6 +64,9 @@ export default async function AdminModelsPage() {
                     <Badge variant="outline">
                       {CATEGORY_LABEL[model.category] ?? model.category}
                     </Badge>
+                  </TableCell>
+                  <TableCell className="hidden md:table-cell text-xs text-muted-foreground">
+                    {model.apiStyle}
                   </TableCell>
                   <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
                     {model.deploymentName}
@@ -90,6 +94,20 @@ export default async function AdminModelsPage() {
                           deploymentName: model.deploymentName,
                           endpoint: model.endpoint,
                           apiVersion: model.apiVersion,
+                          apiStyle: model.apiStyle,
+                          authStyle: model.authStyle,
+                          baseUrl: model.baseUrl,
+                          invokePath: model.invokePath,
+                          targetUri: model.targetUri,
+                          extraHeaders: model.extraHeaders
+                            ? JSON.stringify(model.extraHeaders)
+                            : "",
+                          capabilities: model.capabilities
+                            ? JSON.stringify(model.capabilities)
+                            : "",
+                          supportedTasks: Array.isArray(model.supportedTasks)
+                            ? model.supportedTasks.join(",")
+                            : "",
                           category: model.category,
                           isDefault: model.isDefault,
                           isActive: model.isActive,

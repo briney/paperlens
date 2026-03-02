@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,7 +31,15 @@ interface ModelData {
   provider: string;
   deploymentName: string;
   endpoint: string;
-  apiVersion: string;
+  apiVersion?: string | null;
+  apiStyle: "AZURE_CHAT_COMPLETIONS" | "ANTHROPIC_MESSAGES" | "FULL_TARGET_URI";
+  authStyle: "API_KEY" | "X_API_KEY";
+  baseUrl?: string | null;
+  invokePath?: string | null;
+  targetUri?: string | null;
+  extraHeaders?: string | null;
+  capabilities?: string | null;
+  supportedTasks?: string | null;
   category: string;
   isDefault: boolean;
   isActive: boolean;
@@ -46,7 +54,15 @@ const EMPTY_MODEL: ModelData = {
   provider: "azure-foundry",
   deploymentName: "",
   endpoint: "",
-  apiVersion: "",
+  apiVersion: "2025-01-01",
+  apiStyle: "AZURE_CHAT_COMPLETIONS",
+  authStyle: "API_KEY",
+  baseUrl: "",
+  invokePath: "/models/chat/completions",
+  targetUri: "",
+  extraHeaders: "",
+  capabilities: "",
+  supportedTasks: "SUMMARIZE",
   category: "CHAT_COMPLETION",
   isDefault: false,
   isActive: true,
@@ -60,14 +76,41 @@ interface ModelFormDialogProps {
   mode: "create" | "edit";
 }
 
+function normalizeModelForForm(model?: ModelData): ModelData {
+  if (!model) return EMPTY_MODEL;
+
+  return {
+    ...model,
+    apiVersion: model.apiVersion ?? "",
+    baseUrl: model.baseUrl ?? "",
+    invokePath: model.invokePath ?? "",
+    targetUri: model.targetUri ?? "",
+    extraHeaders: model.extraHeaders ?? "",
+    capabilities: model.capabilities ?? "",
+    supportedTasks: model.supportedTasks ?? "",
+  };
+}
+
 export function ModelFormDialog({ model, mode }: ModelFormDialogProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [form, setForm] = useState<ModelData>(model ?? EMPTY_MODEL);
+  const [form, setForm] = useState<ModelData>(normalizeModelForForm(model));
+
+  const invocationHelp = useMemo(() => {
+    if (form.apiStyle === "ANTHROPIC_MESSAGES") {
+      return "Use base URL + /anthropic/v1/messages path. apiVersion is not required.";
+    }
+
+    if (form.apiStyle === "FULL_TARGET_URI") {
+      return "Provide the exact invoke URL in Target URI.";
+    }
+
+    return "Use base URL + chat-completions path. apiVersion is required.";
+  }, [form.apiStyle]);
 
   function resetForm() {
-    setForm(model ?? EMPTY_MODEL);
+    setForm(normalizeModelForForm(model));
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -78,10 +121,17 @@ export function ModelFormDialog({ model, mode }: ModelFormDialogProps) {
       const url = mode === "create" ? "/api/admin/models" : `/api/admin/models/${model?.id}`;
       const method = mode === "create" ? "POST" : "PATCH";
 
+      const payload = {
+        ...form,
+        extraHeaders: form.extraHeaders?.trim() ? form.extraHeaders : null,
+        capabilities: form.capabilities?.trim() ? form.capabilities : null,
+        supportedTasks: form.supportedTasks?.trim() || null,
+      };
+
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify(payload),
       });
 
       if (!res.ok) {
@@ -100,7 +150,7 @@ export function ModelFormDialog({ model, mode }: ModelFormDialogProps) {
     }
   }
 
-  function update(field: keyof ModelData, value: string | number | boolean) {
+  function update(field: keyof ModelData, value: string | number | boolean | null) {
     setForm((prev) => ({ ...prev, [field]: value }));
   }
 
@@ -118,7 +168,7 @@ export function ModelFormDialog({ model, mode }: ModelFormDialogProps) {
           </Button>
         )}
       </DialogTrigger>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>{mode === "create" ? "Add Model" : "Edit Model"}</DialogTitle>
         </DialogHeader>
@@ -163,23 +213,81 @@ export function ModelFormDialog({ model, mode }: ModelFormDialogProps) {
                 required
               />
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="apiStyle">API Style</Label>
+              <Select
+                value={form.apiStyle}
+                onValueChange={(v) => {
+                  const style = v as ModelData["apiStyle"];
+                  update("apiStyle", style);
+
+                  if (style === "ANTHROPIC_MESSAGES") {
+                    update("authStyle", "X_API_KEY");
+                    if (!form.invokePath) update("invokePath", "/anthropic/v1/messages");
+                  }
+                  if (style === "AZURE_CHAT_COMPLETIONS") {
+                    update("authStyle", "API_KEY");
+                    if (!form.invokePath) update("invokePath", "/models/chat/completions");
+                    if (!form.apiVersion) update("apiVersion", "2025-01-01");
+                  }
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="AZURE_CHAT_COMPLETIONS">azure_chat_completions</SelectItem>
+                  <SelectItem value="ANTHROPIC_MESSAGES">anthropic_messages</SelectItem>
+                  <SelectItem value="FULL_TARGET_URI">full_target_uri</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="authStyle">Auth Style</Label>
+              <Select value={form.authStyle} onValueChange={(v) => update("authStyle", v)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="API_KEY">api-key header</SelectItem>
+                  <SelectItem value="X_API_KEY">x-api-key header</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <div className="space-y-2 sm:col-span-2">
-              <Label htmlFor="endpoint">Endpoint</Label>
+              <Label htmlFor="baseUrl">Base URL</Label>
               <Input
-                id="endpoint"
-                value={form.endpoint}
-                onChange={(e) => update("endpoint", e.target.value)}
-                placeholder="https://..."
-                required
+                id="baseUrl"
+                value={form.baseUrl ?? ""}
+                onChange={(e) => update("baseUrl", e.target.value)}
+                placeholder="https://your-resource.services.ai.azure.com"
+              />
+            </div>
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="invokePath">Invoke Path</Label>
+              <Input
+                id="invokePath"
+                value={form.invokePath ?? ""}
+                onChange={(e) => update("invokePath", e.target.value)}
+                placeholder="/models/chat/completions or /anthropic/v1/messages"
+              />
+            </div>
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="targetUri">Target URI</Label>
+              <Input
+                id="targetUri"
+                value={form.targetUri ?? ""}
+                onChange={(e) => update("targetUri", e.target.value)}
+                placeholder="https://... (for full_target_uri)"
               />
             </div>
             <div className="space-y-2">
               <Label htmlFor="apiVersion">API Version</Label>
               <Input
                 id="apiVersion"
-                value={form.apiVersion}
+                value={form.apiVersion ?? ""}
                 onChange={(e) => update("apiVersion", e.target.value)}
-                required
+                placeholder="e.g. 2025-01-01"
               />
             </div>
             <div className="space-y-2">
@@ -194,6 +302,34 @@ export function ModelFormDialog({ model, mode }: ModelFormDialogProps) {
                   <SelectItem value="EMBEDDING">Embedding</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="supportedTasks">Supported Tasks (comma-separated)</Label>
+              <Input
+                id="supportedTasks"
+                value={form.supportedTasks ?? ""}
+                onChange={(e) => update("supportedTasks", e.target.value)}
+                placeholder="PARSE_PDF,SUMMARIZE,JOURNAL_CLUB"
+              />
+            </div>
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="extraHeaders">Extra Headers (JSON)</Label>
+              <Input
+                id="extraHeaders"
+                value={form.extraHeaders ?? ""}
+                onChange={(e) => update("extraHeaders", e.target.value)}
+                placeholder='{"anthropic-version":"2023-06-01"}'
+              />
+              <p className="text-xs text-muted-foreground">{invocationHelp}</p>
+            </div>
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="capabilities">Capabilities (JSON)</Label>
+              <Input
+                id="capabilities"
+                value={form.capabilities ?? ""}
+                onChange={(e) => update("capabilities", e.target.value)}
+                placeholder='{"tools":true,"longContext":true}'
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="costInput">Cost / 1K Input Tokens</Label>
@@ -242,6 +378,9 @@ export function ModelFormDialog({ model, mode }: ModelFormDialogProps) {
             </div>
           </div>
           <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
             <Button type="submit" disabled={loading}>
               {loading ? "Saving..." : mode === "create" ? "Create Model" : "Save Changes"}
             </Button>

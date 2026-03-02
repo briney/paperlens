@@ -1,24 +1,27 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
-import { prisma } from "@/lib/db";
 import { withErrorHandler } from "@/lib/api-utils";
+import {
+  listCompatibleModelsForTask,
+  parseTaskType,
+  ModelRoutingError,
+} from "@/lib/ai/model-routing";
 
-export const GET = withErrorHandler(async () => {
+export const GET = withErrorHandler(async (request: NextRequest) => {
   const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const models = await prisma.modelConfig.findMany({
-    where: { category: "CHAT_COMPLETION", isActive: true },
-    select: {
-      slug: true,
-      displayName: true,
-      isDefault: true,
-      capabilities: true,
-    },
-    orderBy: [{ isDefault: "desc" }, { displayName: "asc" }],
-  });
+  const taskType = parseTaskType(request.nextUrl.searchParams.get("taskType")) ?? "SUMMARIZE";
 
-  return NextResponse.json({ models });
+  try {
+    const models = await listCompatibleModelsForTask(taskType);
+    return NextResponse.json({ models, taskType });
+  } catch (error) {
+    if (error instanceof ModelRoutingError) {
+      return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
+    }
+    throw error;
+  }
 });

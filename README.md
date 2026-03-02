@@ -63,9 +63,9 @@ Run `./setup.sh` to generate your `.env` file interactively — it auto-generate
 | `REDIS_URL` | Yes | Redis connection string | `redis://localhost:6379` |
 | `JWT_SECRET` | Yes | Access token signing secret (32+ chars) | — |
 | `JWT_REFRESH_SECRET` | Yes | Refresh token signing secret (32+ chars) | — |
-| `AZURE_AI_FOUNDRY_ENDPOINT` | Yes | Azure AI Foundry endpoint URL | `https://your-resource.services.ai.azure.com` |
+| `AZURE_AI_FOUNDRY_ENDPOINT` | No | Legacy fallback endpoint URL (used when task policies/models are not configured) | `https://your-resource.services.ai.azure.com` |
 | `AZURE_AI_FOUNDRY_KEY` | Yes | Azure AI Foundry API key | — |
-| `AZURE_AI_FOUNDRY_API_VERSION` | No | API version (default: `2025-01-01`) | `2025-01-01` |
+| `AZURE_AI_FOUNDRY_API_VERSION` | No | Legacy fallback API version (default: `2025-01-01`) | `2025-01-01` |
 | `AZURE_STORAGE_CONNECTION_STRING` | No | Azure Blob Storage connection string (falls back to local `.storage/`) | — |
 | `AZURE_STORAGE_CONTAINER` | No | Blob container name (default: `paperlens-files`) | `paperlens-files` |
 | `ADMIN_EMAIL` | No | Seed admin email (for `npm run db:seed`) | `admin@example.com` |
@@ -73,6 +73,8 @@ Run `./setup.sh` to generate your `.env` file interactively — it auto-generate
 | `ADMIN_NAME` | No | Seed admin display name | `Admin` |
 | `MAX_UPLOAD_SIZE_MB` | No | Max PDF upload size in MB (default: `50`) | `50` |
 | `NODE_ENV` | No | Environment | `development` / `production` |
+
+Model invocation settings are now per-model in **Admin → Models**, and task-to-model defaults/overrides are managed in **Admin → Task Policies**.
 
 ## Available Scripts
 

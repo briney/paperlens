@@ -1,4 +1,5 @@
 import type { AIProvider, TokenUsage } from "@/lib/ai/types";
+import type { JobType } from "@prisma/client";
 
 export interface AnalyzerContext {
   paper: {
@@ -23,9 +24,11 @@ export interface AnalyzerResult {
 
 export interface Analyzer {
   type: string;
+  taskType: JobType;
   displayName: string;
   description: string;
   requiresParsedMarkup: boolean;
   requiresOriginalPdf: boolean;
+  requiredCapabilities?: Record<string, boolean>;
   execute(context: AnalyzerContext): Promise<AnalyzerResult>;
 }

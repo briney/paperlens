@@ -20,12 +20,16 @@ export interface FetchUrlJobData {
   paperId: string;
   url: string;
   userId: string;
+  parseModelSlug?: string;
+  summaryModelSlug?: string;
 }
 
 export interface ParsePdfJobData {
   paperId: string;
   storagePath: string;
   userId: string;
+  parseModelSlug?: string;
+  summaryModelSlug?: string;
 }
 
 export interface RunAnalysisJobData {
