@@ -4,6 +4,7 @@ import {
   ModelRoutingError,
   type ModelInvocationConfig,
 } from "./model-routing";
+import { sanitizeProviderErrorText } from "./error-sanitizer";
 import type {
   AIProvider,
   Message,
@@ -47,6 +48,89 @@ date: "YYYY-MM-DD" (if found)
 
 Then output the full document content as clean markdown.`;
 
+const PARSE_USER_PROMPT =
+  "Parse this scientific paper and output it as structured markdown with YAML front matter metadata.";
+
+export function buildChatParseBody(modelName: string, base64Pdf: string): Record<string, unknown> {
+  return {
+    model: modelName,
+    messages: [
+      { role: "system", content: PARSE_SYSTEM_PROMPT },
+      {
+        role: "user",
+        content: [
+          {
+            type: "document_url",
+            document_url: {
+              url: `data:application/pdf;base64,${base64Pdf}`,
+            },
+          },
+          {
+            type: "text",
+            text: PARSE_USER_PROMPT,
+          },
+        ],
+      },
+    ],
+  };
+}
+
+export function buildImageToTextParseBody(
+  modelName: string,
+  base64Pdf: string
+): Record<string, unknown> {
+  return {
+    model: modelName,
+    document: {
+      type: "document_url",
+      document_url: `data:application/pdf;base64,${base64Pdf}`,
+    },
+  };
+}
+
+export function extractImageToTextContent(data: Record<string, unknown>): string {
+  if (typeof data.markdown === "string") {
+    return data.markdown.trim();
+  }
+
+  const pages = data.pages;
+  if (!Array.isArray(pages)) return "";
+
+  return pages
+    .map((page) => {
+      if (!page || typeof page !== "object") return "";
+      const markdown = (page as { markdown?: unknown }).markdown;
+      if (typeof markdown === "string") return markdown;
+      const text = (page as { text?: unknown }).text;
+      return typeof text === "string" ? text : "";
+    })
+    .filter((part) => part.length > 0)
+    .join("\n\n")
+    .trim();
+}
+
+export function shouldUseImageToTextForParse(invocation: ModelInvocationConfig): boolean {
+  if (invocation.apiStyle === "AZURE_IMAGE_TO_TEXT") return true;
+
+  const invokePath = invocation.invokePath?.toLowerCase() ?? "";
+  if (!invokePath) return false;
+
+  return invokePath.includes("/v1/ocr")
+    || invokePath.endsWith("/ocr")
+    || invokePath.includes("/ocr?");
+}
+
+export function shouldRetryParseWithImageToText(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+
+  const message = error.message.toLowerCase();
+  return (
+    message.includes("\"loc\":[\"body\",\"document\"]")
+    || (message.includes("field required") && message.includes("document"))
+    || (message.includes("missing") && message.includes("\"document\""))
+  );
+}
+
 export class AzureFoundryProvider implements AIProvider {
   private apiKey: string;
   private fallbackEndpoint?: string;
@@ -76,32 +160,32 @@ export class AzureFoundryProvider implements AIProvider {
     }
 
     const base64Pdf = pdfBuffer.toString("base64");
+    let content = "";
+    let usage: TokenUsage;
 
-    const body = {
-      model: invocation.modelName,
-      messages: [
-        { role: "system", content: PARSE_SYSTEM_PROMPT },
-        {
-          role: "user",
-          content: [
-            {
-              type: "document_url",
-              document_url: {
-                url: `data:application/pdf;base64,${base64Pdf}`,
-              },
-            },
-            {
-              type: "text",
-              text: "Parse this scientific paper and output it as structured markdown with YAML front matter metadata.",
-            },
-          ],
-        },
-      ],
-    };
+    const imageToTextPreferred = shouldUseImageToTextForParse(invocation.invocation);
+    if (imageToTextPreferred) {
+      const body = buildImageToTextParseBody(invocation.modelName, base64Pdf);
+      const data = await this.sendImageToTextParse(invocation.invocation, body);
+      content = extractImageToTextContent(data);
+      usage = this.extractUsage(data);
+    } else {
+      try {
+        const body = buildChatParseBody(invocation.modelName, base64Pdf);
+        const data = await this.sendOpenAIChatCompletion(invocation.invocation, body, "parse");
+        content = this.extractOpenAIContent(data);
+        usage = this.extractUsage(data);
+      } catch (error) {
+        if (!shouldRetryParseWithImageToText(error)) {
+          throw error;
+        }
 
-    const data = await this.sendOpenAIChatCompletion(invocation.invocation, body, "parse");
-    const content = this.extractOpenAIContent(data);
-    const usage = this.extractUsage(data);
+        const body = buildImageToTextParseBody(invocation.modelName, base64Pdf);
+        const data = await this.sendImageToTextParse(invocation.invocation, body);
+        content = extractImageToTextContent(data);
+        usage = this.extractUsage(data);
+      }
+    }
 
     const { title, authors, metadata } = this.parseMetadata(content);
 
@@ -185,12 +269,14 @@ export class AzureFoundryProvider implements AIProvider {
       return {
         modelName,
         invocation: {
-          apiStyle: "AZURE_CHAT_COMPLETIONS",
+          apiStyle: taskType === "PARSE_PDF" ? "AZURE_IMAGE_TO_TEXT" : "AZURE_CHAT_COMPLETIONS",
           authStyle: "API_KEY",
           deploymentName: modelName,
           apiVersion: this.fallbackApiVersion,
           baseUrl: this.fallbackEndpoint,
-          invokePath: `/openai/deployments/${modelName}/chat/completions`,
+          invokePath: taskType === "PARSE_PDF"
+            ? "/v1/ocr"
+            : `/openai/deployments/${modelName}/chat/completions`,
         },
       };
     }
@@ -213,9 +299,34 @@ export class AzureFoundryProvider implements AIProvider {
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
+      const errorText = sanitizeProviderErrorText(await response.text());
       throw new Error(
         `Azure AI Foundry ${operation} failed (${response.status}): ${errorText}`
+      );
+    }
+
+    return response.json();
+  }
+
+  private async sendImageToTextParse(
+    invocation: ModelInvocationConfig,
+    body: Record<string, unknown>
+  ): Promise<Record<string, unknown>> {
+    const url = this.buildImageToTextUrl(invocation);
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...this.getAuthHeaders(invocation.authStyle),
+        ...invocation.extraHeaders,
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const errorText = sanitizeProviderErrorText(await response.text());
+      throw new Error(
+        `Azure AI Foundry parse failed (${response.status}): ${errorText}`
       );
     }
 
@@ -268,13 +379,38 @@ export class AzureFoundryProvider implements AIProvider {
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
+      const errorText = sanitizeProviderErrorText(await response.text());
       throw new Error(
         `Azure AI Foundry completion failed (${response.status}): ${errorText}`
       );
     }
 
     return response.json();
+  }
+
+  private buildImageToTextUrl(invocation: ModelInvocationConfig): string {
+    if (invocation.apiStyle === "FULL_TARGET_URI") {
+      if (!invocation.targetUri) {
+        throw new Error("Model endpoint misconfigured: targetUri is required for FULL_TARGET_URI.");
+      }
+      return invocation.targetUri;
+    }
+
+    if (!invocation.baseUrl) {
+      throw new Error("Model endpoint misconfigured: baseUrl is required.");
+    }
+
+    const path = invocation.invokePath ?? "/v1/ocr";
+    const version = invocation.apiVersion ?? this.fallbackApiVersion;
+    const normalizedBase = invocation.baseUrl.replace(/\/$/, "");
+    const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+    const url = new URL(`${normalizedBase}${normalizedPath}`);
+
+    if (version && !url.searchParams.get("api-version")) {
+      url.searchParams.set("api-version", version);
+    }
+
+    return url.toString();
   }
 
   private buildOpenAIUrl(invocation: ModelInvocationConfig): string {

@@ -9,6 +9,7 @@ import { parseTaskType } from "./model-routing";
 
 const MODEL_API_STYLES: ModelApiStyle[] = [
   "AZURE_CHAT_COMPLETIONS",
+  "AZURE_IMAGE_TO_TEXT",
   "ANTHROPIC_MESSAGES",
   "FULL_TARGET_URI",
 ];
@@ -164,16 +165,34 @@ export function normalizeModelConfigPayload(body: Record<string, unknown>): Norm
 
   const apiVersion = asTrimmedString(body.apiVersion);
   const baseUrl = asTrimmedString(body.baseUrl) ?? asTrimmedString(body.endpoint);
-  const invokePath = asTrimmedString(body.invokePath);
+  const invokePath = asTrimmedString(body.invokePath)
+    ?? (apiStyle === "AZURE_IMAGE_TO_TEXT" ? "/v1/ocr" : undefined);
   const targetUri = asTrimmedString(body.targetUri);
+  const normalizedInvokePath = invokePath?.toLowerCase() ?? "";
 
   if (apiStyle === "AZURE_CHAT_COMPLETIONS") {
     if (!baseUrl) return { error: "baseUrl is required for AZURE_CHAT_COMPLETIONS" };
     if (!apiVersion) return { error: "apiVersion is required for AZURE_CHAT_COMPLETIONS" };
+    if (normalizedInvokePath.includes("/v1/ocr") || normalizedInvokePath.endsWith("/ocr")) {
+      return {
+        error:
+          "invokePath appears to target OCR. Use apiStyle AZURE_IMAGE_TO_TEXT for OCR endpoints.",
+      };
+    }
   }
 
   if (apiStyle === "ANTHROPIC_MESSAGES" && !baseUrl) {
     return { error: "baseUrl is required for ANTHROPIC_MESSAGES" };
+  }
+
+  if (apiStyle === "AZURE_IMAGE_TO_TEXT") {
+    if (!baseUrl) return { error: "baseUrl is required for AZURE_IMAGE_TO_TEXT" };
+    if (normalizedInvokePath.includes("chat/completions")) {
+      return {
+        error:
+          "invokePath appears to target chat completions. Use apiStyle AZURE_CHAT_COMPLETIONS for chat endpoints.",
+      };
+    }
   }
 
   if (apiStyle === "FULL_TARGET_URI" && !targetUri) {

@@ -7,6 +7,7 @@ import type { AIProvider } from "@/lib/ai/types";
 import { resolveUrl, downloadPdf } from "@/lib/ingestion/url-resolver";
 import { validatePdfBytes } from "@/lib/ingestion/pdf-validator";
 import { getAnalyzer } from "@/lib/analyzers";
+import { sanitizeProviderErrorText } from "@/lib/ai/error-sanitizer";
 import { paperQueue } from "./index";
 import type {
   PaperJobName,
@@ -296,7 +297,8 @@ export function createPaperWorker() {
   });
 
   worker.on("failed", (job, err) => {
-    console.error(`Job ${job?.id} (${job?.name}) failed:`, err.message);
+    const sanitizedError = sanitizeProviderErrorText(err.message);
+    console.error(`Job ${job?.id} (${job?.name}) failed:`, sanitizedError);
     // Update job status to FAILED in DB
     if (job?.id) {
       prisma.job
@@ -304,7 +306,7 @@ export function createPaperWorker() {
           where: { id: job.id },
           data: {
             status: "FAILED",
-            error: err.message,
+            error: sanitizedError,
             completedAt: new Date(),
           },
         })

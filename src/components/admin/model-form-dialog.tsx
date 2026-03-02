@@ -32,7 +32,11 @@ interface ModelData {
   deploymentName: string;
   endpoint: string;
   apiVersion?: string | null;
-  apiStyle: "AZURE_CHAT_COMPLETIONS" | "ANTHROPIC_MESSAGES" | "FULL_TARGET_URI";
+  apiStyle:
+    | "AZURE_CHAT_COMPLETIONS"
+    | "AZURE_IMAGE_TO_TEXT"
+    | "ANTHROPIC_MESSAGES"
+    | "FULL_TARGET_URI";
   authStyle: "API_KEY" | "X_API_KEY";
   baseUrl?: string | null;
   invokePath?: string | null;
@@ -100,6 +104,10 @@ export function ModelFormDialog({ model, mode }: ModelFormDialogProps) {
   const invocationHelp = useMemo(() => {
     if (form.apiStyle === "ANTHROPIC_MESSAGES") {
       return "Use base URL + /anthropic/v1/messages path. apiVersion is not required.";
+    }
+
+    if (form.apiStyle === "AZURE_IMAGE_TO_TEXT") {
+      return "Use base URL + /v1/ocr path. apiVersion is optional.";
     }
 
     if (form.apiStyle === "FULL_TARGET_URI") {
@@ -225,9 +233,17 @@ export function ModelFormDialog({ model, mode }: ModelFormDialogProps) {
                     update("authStyle", "X_API_KEY");
                     if (!form.invokePath) update("invokePath", "/anthropic/v1/messages");
                   }
+                  if (style === "AZURE_IMAGE_TO_TEXT") {
+                    update("authStyle", "API_KEY");
+                    if (!form.invokePath || form.invokePath.includes("chat/completions")) {
+                      update("invokePath", "/v1/ocr");
+                    }
+                  }
                   if (style === "AZURE_CHAT_COMPLETIONS") {
                     update("authStyle", "API_KEY");
-                    if (!form.invokePath) update("invokePath", "/models/chat/completions");
+                    if (!form.invokePath || form.invokePath.includes("/v1/ocr")) {
+                      update("invokePath", "/models/chat/completions");
+                    }
                     if (!form.apiVersion) update("apiVersion", "2025-01-01");
                   }
                 }}
@@ -237,6 +253,7 @@ export function ModelFormDialog({ model, mode }: ModelFormDialogProps) {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="AZURE_CHAT_COMPLETIONS">azure_chat_completions</SelectItem>
+                  <SelectItem value="AZURE_IMAGE_TO_TEXT">azure_image_to_text</SelectItem>
                   <SelectItem value="ANTHROPIC_MESSAGES">anthropic_messages</SelectItem>
                   <SelectItem value="FULL_TARGET_URI">full_target_uri</SelectItem>
                 </SelectContent>
@@ -269,7 +286,7 @@ export function ModelFormDialog({ model, mode }: ModelFormDialogProps) {
                 id="invokePath"
                 value={form.invokePath ?? ""}
                 onChange={(e) => update("invokePath", e.target.value)}
-                placeholder="/models/chat/completions or /anthropic/v1/messages"
+                placeholder="/models/chat/completions, /v1/ocr, or /anthropic/v1/messages"
               />
             </div>
             <div className="space-y-2 sm:col-span-2">

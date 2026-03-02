@@ -183,6 +183,7 @@ enum ModelCategory {
 
 enum ModelApiStyle {
   AZURE_CHAT_COMPLETIONS
+  AZURE_IMAGE_TO_TEXT
   ANTHROPIC_MESSAGES
   FULL_TARGET_URI
 }
