@@ -2,7 +2,8 @@ services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
-    network_mode: host
+    ports:
+      - "5432:5432"
     environment:
       POSTGRES_USER: paperlens
       POSTGRES_PASSWORD: paperlens_dev
@@ -13,7 +14,8 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    network_mode: host
+    ports:
+      - "6379:6379"
     volumes:
       - redisdata:/data
 
