@@ -10,7 +10,11 @@
     "worker": "npx tsx src/lib/queue/worker-entry.ts",
     "db:migrate": "prisma migrate dev",
     "db:generate": "prisma generate",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "db:seed": "prisma db seed"
+  },
+  "prisma": {
+    "seed": "npx tsx prisma/seed.ts"
   },
   "dependencies": {
     "@azure/storage-blob": "^12.31.0",
