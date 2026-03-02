@@ -76,6 +76,7 @@ ${BOLD}Actions:${RESET}
   ${BOLD}-s, --stop${RESET}         Stop all services and exit
   ${BOLD}-l, --logs${RESET}         Tail dev + worker logs
   ${BOLD}    --status${RESET}       Show process/container status
+  ${BOLD}-D, --destroy${RESET}      Remove all data, volumes, and config (requires confirmation)
   ${BOLD}-h, --help${RESET}         Show this help message
 
 ${BOLD}Options:${RESET}
@@ -90,6 +91,7 @@ ${BOLD}Examples:${RESET}
   ./deploy.sh --skip-docker       # Restart app only (Docker already running)
   ./deploy.sh --seed              # Start everything and seed the database
   ./deploy.sh --stop              # Stop everything
+  ./deploy.sh --destroy           # Remove all data and start fresh
 EOF
 }
 
@@ -99,6 +101,7 @@ while [[ $# -gt 0 ]]; do
         -s|--stop)         ACTION="stop" ;;
         -l|--logs)         ACTION="logs" ;;
         --status)          ACTION="status" ;;
+        -D|--destroy)      ACTION="destroy" ;;
         --skip-setup)      SKIP_SETUP=true ;;
         --skip-docker)     SKIP_DOCKER=true ;;
         --skip-install)    SKIP_INSTALL=true ;;
@@ -200,6 +203,69 @@ do_stop() {
 
     echo ""
     success "All services stopped"
+}
+
+# ---------------------------------------------------------------------------
+# Action: --destroy
+# ---------------------------------------------------------------------------
+do_destroy() {
+    header "Destroy PaperLens deployment"
+
+    echo -e "${RED}${BOLD}This will permanently remove:${RESET}"
+    echo -e "  • Docker containers and volumes (pgdata, redisdata)"
+    echo -e "  • .storage/  (uploaded files)"
+    echo -e "  • .pids/     (process PID files)"
+    echo -e "  • .logs/     (application logs)"
+    echo -e "  • .next/     (build cache)"
+    echo -e "  • .env       (environment config)"
+    echo -e "  • .env.backup"
+    echo ""
+    echo -e "${YELLOW}This action cannot be undone.${RESET}"
+    echo ""
+
+    read -r -p "Are you sure? [y/N] " confirm
+    if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+        info "Cancelled."
+        exit 0
+    fi
+
+    echo ""
+
+    # Stop application processes
+    stop_process "dev"
+    stop_process "worker"
+
+    # Stop Docker and remove volumes
+    if command -v docker &>/dev/null && docker compose ps --quiet 2>/dev/null | grep -q .; then
+        info "Removing Docker containers and volumes..."
+        docker compose down -v --remove-orphans
+        success "Docker containers and volumes removed"
+    else
+        info "No Docker containers to remove"
+    fi
+
+    # Remove data directories
+    for dir in .storage .pids .logs .next; do
+        if [[ -d "$dir" ]]; then
+            rm -rf "$dir"
+            success "Removed $dir/"
+        fi
+    done
+
+    # Remove env files
+    for f in .env .env.backup; do
+        if [[ -f "$f" ]]; then
+            rm -f "$f"
+            success "Removed $f"
+        fi
+    done
+
+    echo ""
+    success "All PaperLens data has been removed."
+    echo ""
+    echo -e "  To start fresh, run:"
+    echo -e "    ${BOLD}./deploy.sh${RESET}"
+    echo ""
 }
 
 # ---------------------------------------------------------------------------
@@ -389,12 +455,19 @@ do_start() {
         success "Migrations applied"
     fi
 
-    # ── Optional seed ─────────────────────────────────────────────────────
+    # ── Seed admin user ───────────────────────────────────────────────────
+    # Auto-seed when ADMIN_EMAIL and ADMIN_PASSWORD are configured,
+    # or when --seed is explicitly passed.
     if $RUN_SEED; then
         header "Seed data"
         info "Running database seed..."
         npm run db:seed
         success "Database seeded"
+    elif [[ -f ".env" ]] && grep -q '^ADMIN_EMAIL=.\+' .env && grep -q '^ADMIN_PASSWORD=.\+' .env; then
+        header "Seed data"
+        info "Admin credentials found in .env, seeding admin user..."
+        npm run db:seed
+        success "Admin user seeded"
     fi
 
     # ── Background processes ──────────────────────────────────────────────
@@ -467,8 +540,9 @@ do_start() {
 # Main
 # ---------------------------------------------------------------------------
 case "$ACTION" in
-    start)  do_start ;;
-    stop)   do_stop ;;
-    status) do_status ;;
-    logs)   do_logs ;;
+    start)   do_start ;;
+    stop)    do_stop ;;
+    status)  do_status ;;
+    logs)    do_logs ;;
+    destroy) do_destroy ;;
 esac

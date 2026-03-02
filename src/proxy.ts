@@ -4,7 +4,6 @@ import { verifyAccessToken, verifyRefreshToken } from "@/lib/auth/jwt";
 // Routes that require authentication
 const PROTECTED_PATTERNS = ["/dashboard", "/upload", "/papers", "/settings"];
 const ADMIN_PATTERNS = ["/admin"];
-const AUTH_PAGES = ["/login", "/register"];
 
 function matchesPatterns(pathname: string, patterns: string[]): boolean {
   return patterns.some(
@@ -45,9 +44,14 @@ export function proxy(req: NextRequest) {
     }
   }
 
-  // Redirect authenticated users away from auth pages
-  if (payload && matchesPatterns(pathname, AUTH_PAGES)) {
-    return NextResponse.redirect(new URL("/dashboard", req.url));
+  // Clear stale cookies when tokens exist but both fail verification
+  if (!payload && (accessToken || refreshToken)) {
+    const response = matchesPatterns(pathname, [...PROTECTED_PATTERNS, ...ADMIN_PATTERNS])
+      ? NextResponse.redirect(new URL("/login", req.url))
+      : NextResponse.next();
+    response.cookies.delete("access_token");
+    response.cookies.delete("refresh_token");
+    return response;
   }
 
   // Protect authenticated routes

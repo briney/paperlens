@@ -40,5 +40,8 @@ next-env.d.ts
 # Prisma
 /src/generated/prisma
 
+# PID files (deploy.sh)
+.pids/
+
 # Misc
 *.log

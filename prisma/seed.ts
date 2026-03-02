@@ -5,6 +5,13 @@ import bcrypt from "bcryptjs";
 
 const SALT_ROUNDS = 12;
 
+const ADMIN_QUOTA = {
+  tier: "ADMIN" as const,
+  maxPapersPerDay: 1000,
+  maxPapersPerMonth: 10000,
+  maxTokensPerMonth: 100000000,
+};
+
 async function main() {
   const email = process.env.ADMIN_EMAIL;
   const password = process.env.ADMIN_PASSWORD;
@@ -34,22 +41,24 @@ async function main() {
         passwordHash,
         name,
         role: "ADMIN",
-        quota: {
-          create: {
-            tier: "ADMIN",
-            maxPapersPerDay: 1000,
-            maxPapersPerMonth: 10000,
-            maxTokensPerMonth: 100000000,
-          },
-        },
       },
       update: {
         role: "ADMIN",
+        passwordHash,
+        name,
       },
     });
 
+    await prisma.userQuota.upsert({
+      where: { userId: user.id },
+      create: { userId: user.id, ...ADMIN_QUOTA },
+      update: { ...ADMIN_QUOTA },
+    });
+
     if (existing) {
-      console.log(`Updated existing user ${user.email} to ADMIN role`);
+      console.log(
+        `Promoted existing user ${user.email} to ADMIN (updated password, name, and quota)`
+      );
     } else {
       console.log(`Created admin user ${user.email}`);
     }
