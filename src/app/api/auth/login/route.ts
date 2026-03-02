@@ -25,6 +25,18 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
     );
   }
 
-  const user = await loginUser(email, password);
-  return NextResponse.json({ user });
+  try {
+    const user = await loginUser(email, password);
+    return NextResponse.json({ user });
+  } catch (error) {
+    if (error instanceof Error) {
+      if (error.message === "Invalid email or password") {
+        return NextResponse.json({ error: error.message }, { status: 401 });
+      }
+      if (error.message === "Account is deactivated") {
+        return NextResponse.json({ error: error.message }, { status: 403 });
+      }
+    }
+    throw error; // re-throw unexpected errors to withErrorHandler
+  }
 });
