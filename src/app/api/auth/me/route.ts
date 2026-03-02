@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
+import { withErrorHandler } from "@/lib/api-utils";
 
-export async function GET() {
+export const GET = withErrorHandler(async () => {
   const user = await getCurrentUser();
 
   if (!user) {
@@ -9,4 +10,4 @@ export async function GET() {
   }
 
   return NextResponse.json({ user });
-}
+});

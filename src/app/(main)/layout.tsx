@@ -2,6 +2,8 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { SidebarNav } from "@/components/sidebar-nav";
 import { UserNav } from "@/components/user-nav";
+import { MobileNav } from "@/components/mobile-nav";
+import { CommandMenu, CommandMenuTrigger } from "@/components/command-menu";
 import { Separator } from "@/components/ui/separator";
 
 export default async function MainLayout({
@@ -31,15 +33,18 @@ export default async function MainLayout({
         {/* Header */}
         <header className="flex h-14 items-center justify-between border-b px-6">
           <div className="flex items-center gap-2 md:hidden">
+            <MobileNav />
             <span className="text-lg font-bold">PaperLens</span>
           </div>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-3">
+            <CommandMenuTrigger />
             <UserNav user={user} />
           </div>
         </header>
 
         {/* Page content */}
         <main className="flex-1 overflow-y-auto p-6">{children}</main>
+        <CommandMenu />
       </div>
     </div>
   );

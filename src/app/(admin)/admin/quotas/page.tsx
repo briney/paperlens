@@ -49,43 +49,49 @@ export default async function AdminQuotasPage() {
         )}
       </div>
 
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>User</TableHead>
-            <TableHead>Tier</TableHead>
-            <TableHead>Papers/Day</TableHead>
-            <TableHead>Papers/Month</TableHead>
-            <TableHead>Tokens/Month</TableHead>
-            <TableHead>Actions</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {users.map((user) => (
-            <TableRow key={user.id}>
-              <TableCell>
-                <div>
-                  <span className="font-medium">{user.name || "—"}</span>
-                  <span className="ml-2 text-xs text-muted-foreground">{user.email}</span>
-                </div>
-              </TableCell>
-              <TableCell>
-                <Badge variant="outline">{user.quota?.tier ?? "FREE"}</Badge>
-              </TableCell>
-              <TableCell>{user.quota?.maxPapersPerDay ?? TIER_DEFAULTS.FREE.maxPapersPerDay}</TableCell>
-              <TableCell>{user.quota?.maxPapersPerMonth ?? TIER_DEFAULTS.FREE.maxPapersPerMonth}</TableCell>
-              <TableCell>{(user.quota?.maxTokensPerMonth ?? TIER_DEFAULTS.FREE.maxTokensPerMonth).toLocaleString()}</TableCell>
-              <TableCell>
-                <QuotaFormDialog
-                  userId={user.id}
-                  userName={user.name}
-                  quota={user.quota}
-                />
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+      {users.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No users found.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>User</TableHead>
+                <TableHead>Tier</TableHead>
+                <TableHead>Papers/Day</TableHead>
+                <TableHead className="hidden md:table-cell">Papers/Month</TableHead>
+                <TableHead className="hidden md:table-cell">Tokens/Month</TableHead>
+                <TableHead>Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {users.map((user) => (
+                <TableRow key={user.id}>
+                  <TableCell>
+                    <div>
+                      <span className="font-medium">{user.name || "—"}</span>
+                      <span className="ml-2 text-xs text-muted-foreground">{user.email}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="outline">{user.quota?.tier ?? "FREE"}</Badge>
+                  </TableCell>
+                  <TableCell>{user.quota?.maxPapersPerDay ?? TIER_DEFAULTS.FREE.maxPapersPerDay}</TableCell>
+                  <TableCell className="hidden md:table-cell">{user.quota?.maxPapersPerMonth ?? TIER_DEFAULTS.FREE.maxPapersPerMonth}</TableCell>
+                  <TableCell className="hidden md:table-cell">{(user.quota?.maxTokensPerMonth ?? TIER_DEFAULTS.FREE.maxTokensPerMonth).toLocaleString()}</TableCell>
+                  <TableCell>
+                    <QuotaFormDialog
+                      userId={user.id}
+                      userName={user.name}
+                      quota={user.quota}
+                    />
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
     </div>
   );
 }

@@ -4,12 +4,18 @@ import { prisma } from "@/lib/db";
 import { paperQueue } from "@/lib/queue";
 import { getStorage } from "@/lib/storage";
 import { validatePdfBytes, getMaxUploadSizeMB } from "@/lib/ingestion/pdf-validator";
+import { withErrorHandler } from "@/lib/api-utils";
+import { isAllowedPaperUrl } from "@/lib/validation";
+import { rateLimit } from "@/lib/rate-limit";
 
-export async function POST(request: NextRequest) {
+export const POST = withErrorHandler(async (request: NextRequest) => {
   const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const limited = await rateLimit(request, "papers:create", { windowSeconds: 60, maxRequests: 5 });
+  if (limited) return limited;
 
   const contentType = request.headers.get("content-type") ?? "";
 
@@ -27,7 +33,7 @@ export async function POST(request: NextRequest) {
     { error: "Unsupported content type. Use multipart/form-data for PDF upload or application/json for URL submission." },
     { status: 400 }
   );
-}
+});
 
 async function handlePdfUpload(request: NextRequest, userId: string) {
   let formData: FormData;
@@ -109,6 +115,13 @@ async function handleUrlSubmission(request: NextRequest, userId: string) {
     return NextResponse.json({ error: "Invalid URL" }, { status: 400 });
   }
 
+  if (!isAllowedPaperUrl(url)) {
+    return NextResponse.json(
+      { error: "URL domain is not in the allowed list. Supported sources include arXiv, bioRxiv, Nature, Science, PubMed, and other major publishers." },
+      { status: 400 }
+    );
+  }
+
   // Determine source type: if URL ends with .pdf, it's a direct PDF URL
   const source = url.toLowerCase().endsWith(".pdf") ? "PDF_URL" : "PAGE_URL";
 
@@ -142,7 +155,7 @@ async function handleUrlSubmission(request: NextRequest, userId: string) {
   return NextResponse.json({ paper, job }, { status: 201 });
 }
 
-export async function GET() {
+export const GET = withErrorHandler(async () => {
   const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -160,4 +173,4 @@ export async function GET() {
   });
 
   return NextResponse.json({ papers });
-}
+});

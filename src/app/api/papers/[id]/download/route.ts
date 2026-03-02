@@ -2,17 +2,23 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { getStorage } from "@/lib/storage";
+import { withErrorHandler } from "@/lib/api-utils";
+import { isValidCuid } from "@/lib/validation";
 
-export async function GET(
+export const GET = withErrorHandler(async (
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+  { params }: { params: Promise<Record<string, string | string[]>> }
+) => {
   const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const { id } = await params;
+  if (typeof id !== "string" || !isValidCuid(id)) {
+    return NextResponse.json({ error: "Invalid paper ID" }, { status: 400 });
+  }
+
   const type = request.nextUrl.searchParams.get("type");
 
   if (!type || !["summary", "markup"].includes(type)) {
@@ -65,4 +71,4 @@ export async function GET(
       "Content-Disposition": `attachment; filename="${filename}"`,
     },
   });
-}
+});

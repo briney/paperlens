@@ -56,7 +56,7 @@ export default async function AdminJobsPage() {
         </p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
         {summaryCards.map(({ label, key }) => (
           <Card key={key}>
             <CardHeader className="pb-2">
@@ -72,54 +72,56 @@ export default async function AdminJobsPage() {
       {jobs.length === 0 ? (
         <p className="text-sm text-muted-foreground">No jobs found.</p>
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>ID</TableHead>
-              <TableHead>User</TableHead>
-              <TableHead>Paper</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Error</TableHead>
-              <TableHead>Duration</TableHead>
-              <TableHead>Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {jobs.map((job) => {
-              const duration =
-                job.startedAt && job.completedAt
-                  ? `${((job.completedAt.getTime() - job.startedAt.getTime()) / 1000).toFixed(1)}s`
-                  : "—";
-              return (
-                <TableRow key={job.id}>
-                  <TableCell className="font-mono text-xs">
-                    {job.id.slice(0, 8)}
-                  </TableCell>
-                  <TableCell>{job.user.name || job.user.email}</TableCell>
-                  <TableCell className="max-w-40 truncate">
-                    {job.paper.title || "Untitled"}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline">{job.type.replace(/_/g, " ")}</Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={STATUS_VARIANT[job.status] ?? "outline"}>
-                      {job.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="max-w-48 truncate text-xs text-muted-foreground">
-                    {job.error || "—"}
-                  </TableCell>
-                  <TableCell>{duration}</TableCell>
-                  <TableCell>
-                    <JobActions jobId={job.id} status={job.status} />
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="hidden md:table-cell">ID</TableHead>
+                <TableHead>User</TableHead>
+                <TableHead>Paper</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="hidden md:table-cell">Error</TableHead>
+                <TableHead className="hidden md:table-cell">Duration</TableHead>
+                <TableHead>Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {jobs.map((job) => {
+                const duration =
+                  job.startedAt && job.completedAt
+                    ? `${((job.completedAt.getTime() - job.startedAt.getTime()) / 1000).toFixed(1)}s`
+                    : "—";
+                return (
+                  <TableRow key={job.id}>
+                    <TableCell className="hidden md:table-cell font-mono text-xs">
+                      {job.id.slice(0, 8)}
+                    </TableCell>
+                    <TableCell>{job.user.name || job.user.email}</TableCell>
+                    <TableCell className="max-w-40 truncate">
+                      {job.paper.title || "Untitled"}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline">{job.type.replace(/_/g, " ")}</Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={STATUS_VARIANT[job.status] ?? "outline"}>
+                        {job.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="hidden md:table-cell max-w-48 truncate text-xs text-muted-foreground">
+                      {job.error || "—"}
+                    </TableCell>
+                    <TableCell className="hidden md:table-cell">{duration}</TableCell>
+                    <TableCell>
+                      <JobActions jobId={job.id} status={job.status} />
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
       )}
     </div>
   );

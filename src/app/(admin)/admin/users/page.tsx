@@ -37,53 +37,59 @@ export default async function AdminUsersPage() {
         </p>
       </div>
 
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Name</TableHead>
-            <TableHead>Email</TableHead>
-            <TableHead>Role</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead>Papers</TableHead>
-            <TableHead>Tier</TableHead>
-            <TableHead>Joined</TableHead>
-            <TableHead>Actions</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {users.map((user) => (
-            <TableRow key={user.id}>
-              <TableCell className="font-medium">{user.name || "—"}</TableCell>
-              <TableCell>{user.email}</TableCell>
-              <TableCell>
-                <Badge variant={user.role === "ADMIN" ? "default" : "secondary"}>
-                  {user.role}
-                </Badge>
-              </TableCell>
-              <TableCell>
-                <Badge variant={user.isActive ? "secondary" : "destructive"}>
-                  {user.isActive ? "Active" : "Inactive"}
-                </Badge>
-              </TableCell>
-              <TableCell>{user._count.papers}</TableCell>
-              <TableCell>
-                <Badge variant="outline">{user.quota?.tier ?? "FREE"}</Badge>
-              </TableCell>
-              <TableCell className="text-muted-foreground">
-                {user.createdAt.toLocaleDateString()}
-              </TableCell>
-              <TableCell>
-                <UserActions
-                  userId={user.id}
-                  currentRole={user.role}
-                  isActive={user.isActive}
-                  isSelf={user.id === currentUser?.id}
-                />
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+      {users.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No users found.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>Email</TableHead>
+                <TableHead>Role</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="hidden md:table-cell">Papers</TableHead>
+                <TableHead className="hidden md:table-cell">Tier</TableHead>
+                <TableHead className="hidden md:table-cell">Joined</TableHead>
+                <TableHead>Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {users.map((user) => (
+                <TableRow key={user.id}>
+                  <TableCell className="font-medium">{user.name || "—"}</TableCell>
+                  <TableCell>{user.email}</TableCell>
+                  <TableCell>
+                    <Badge variant={user.role === "ADMIN" ? "default" : "secondary"}>
+                      {user.role}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={user.isActive ? "secondary" : "destructive"}>
+                      {user.isActive ? "Active" : "Inactive"}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="hidden md:table-cell">{user._count.papers}</TableCell>
+                  <TableCell className="hidden md:table-cell">
+                    <Badge variant="outline">{user.quota?.tier ?? "FREE"}</Badge>
+                  </TableCell>
+                  <TableCell className="hidden md:table-cell text-muted-foreground">
+                    {user.createdAt.toLocaleDateString()}
+                  </TableCell>
+                  <TableCell>
+                    <UserActions
+                      userId={user.id}
+                      currentRole={user.role}
+                      isActive={user.isActive}
+                      isSelf={user.id === currentUser?.id}
+                    />
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
     </div>
   );
 }

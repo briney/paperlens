@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, CheckCircle2, XCircle, Clock } from "lucide-react";
+import { toast } from "sonner";
 
 interface Job {
   id: string;
@@ -61,6 +62,16 @@ const JOB_TYPE_LABELS: Record<string, string> = {
 export function JobStatusPoller({ paperId, initialJobs }: JobStatusPollerProps) {
   const router = useRouter();
   const [jobs, setJobs] = useState<Job[]>(initialJobs);
+  const prevStatusesRef = useRef<Record<string, string>>({});
+
+  // Initialize previous statuses from initial jobs
+  useEffect(() => {
+    const statuses: Record<string, string> = {};
+    for (const job of initialJobs) {
+      statuses[job.id] = job.status;
+    }
+    prevStatusesRef.current = statuses;
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const hasActiveJobs = jobs.some(
     (j) => j.status === "QUEUED" || j.status === "PROCESSING"
@@ -71,10 +82,34 @@ export function JobStatusPoller({ paperId, initialJobs }: JobStatusPollerProps) 
       const response = await fetch(`/api/papers/${paperId}/jobs`);
       if (!response.ok) return;
       const data = await response.json();
-      setJobs(data.jobs);
+      const newJobs = data.jobs as Job[];
+
+      // Check for status transitions and fire toasts
+      for (const job of newJobs) {
+        const prevStatus = prevStatusesRef.current[job.id];
+        if (prevStatus && prevStatus !== job.status) {
+          const label = JOB_TYPE_LABELS[job.type] ?? job.type;
+          if (job.status === "COMPLETED") {
+            toast.success(`${label} complete`);
+          } else if (job.status === "FAILED") {
+            toast.error(`${label} failed`, {
+              description: job.error ?? undefined,
+            });
+          }
+        }
+      }
+
+      // Update previous statuses
+      const statuses: Record<string, string> = {};
+      for (const job of newJobs) {
+        statuses[job.id] = job.status;
+      }
+      prevStatusesRef.current = statuses;
+
+      setJobs(newJobs);
 
       // Check if all jobs just completed
-      const allDone = (data.jobs as Job[]).every(
+      const allDone = newJobs.every(
         (j) => j.status === "COMPLETED" || j.status === "FAILED" || j.status === "CANCELLED"
       );
       if (allDone && hasActiveJobs) {

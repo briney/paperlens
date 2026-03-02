@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/admin";
+import { withErrorHandler } from "@/lib/api-utils";
 
-export async function GET() {
+export const GET = withErrorHandler(async () => {
   const check = await requireAdmin();
   if (check.error) return check.error;
 
@@ -11,9 +12,9 @@ export async function GET() {
   });
 
   return NextResponse.json(models);
-}
+});
 
-export async function POST(request: NextRequest) {
+export const POST = withErrorHandler(async (request: NextRequest) => {
   const check = await requireAdmin();
   if (check.error) return check.error;
 
@@ -68,4 +69,4 @@ export async function POST(request: NextRequest) {
   });
 
   return NextResponse.json(model, { status: 201 });
-}
+});

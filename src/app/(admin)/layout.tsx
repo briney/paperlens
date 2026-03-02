@@ -2,6 +2,8 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { AdminNav } from "@/components/admin-nav";
 import { UserNav } from "@/components/user-nav";
+import { MobileAdminNav } from "@/components/mobile-admin-nav";
+import { CommandMenu, CommandMenuTrigger } from "@/components/command-menu";
 import { Separator } from "@/components/ui/separator";
 
 export default async function AdminLayout({
@@ -36,13 +38,16 @@ export default async function AdminLayout({
       <div className="flex flex-1 flex-col overflow-hidden">
         <header className="flex h-14 items-center justify-between border-b px-6">
           <div className="flex items-center gap-2 md:hidden">
+            <MobileAdminNav />
             <span className="text-lg font-bold">Admin</span>
           </div>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-3">
+            <CommandMenuTrigger />
             <UserNav user={user} />
           </div>
         </header>
         <main className="flex-1 overflow-y-auto p-6">{children}</main>
+        <CommandMenu />
       </div>
     </div>
   );

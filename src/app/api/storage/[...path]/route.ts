@@ -1,18 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { getStorage } from "@/lib/storage";
+import { withErrorHandler } from "@/lib/api-utils";
 
-export async function GET(
+export const GET = withErrorHandler(async (
   _request: NextRequest,
-  { params }: { params: Promise<{ path: string[] }> }
-) {
+  { params }: { params: Promise<Record<string, string | string[]>> }
+) => {
   const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const { path } = await params;
-  const storagePath = decodeURIComponent(path.join("/"));
+  const pathSegments = Array.isArray(path) ? path : [path];
+  const storagePath = decodeURIComponent(pathSegments.join("/"));
 
   // Only allow users to access their own files
   if (!storagePath.includes(user.id)) {
@@ -39,4 +41,4 @@ export async function GET(
       "Content-Length": data.length.toString(),
     },
   });
-}
+});

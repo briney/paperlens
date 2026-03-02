@@ -2,17 +2,22 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { getStorage } from "@/lib/storage";
+import { withErrorHandler } from "@/lib/api-utils";
+import { isValidCuid } from "@/lib/validation";
 
-export async function GET(
+export const GET = withErrorHandler(async (
   _request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+  { params }: { params: Promise<Record<string, string | string[]>> }
+) => {
   const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const { id } = await params;
+  if (typeof id !== "string" || !isValidCuid(id)) {
+    return NextResponse.json({ error: "Invalid paper ID" }, { status: 400 });
+  }
 
   const paper = await prisma.paper.findFirst({
     where: { id, userId: user.id },
@@ -27,18 +32,21 @@ export async function GET(
   }
 
   return NextResponse.json({ paper });
-}
+});
 
-export async function DELETE(
+export const DELETE = withErrorHandler(async (
   _request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+  { params }: { params: Promise<Record<string, string | string[]>> }
+) => {
   const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const { id } = await params;
+  if (typeof id !== "string" || !isValidCuid(id)) {
+    return NextResponse.json({ error: "Invalid paper ID" }, { status: 400 });
+  }
 
   const paper = await prisma.paper.findFirst({
     where: { id, userId: user.id },
@@ -56,11 +64,11 @@ export async function DELETE(
   // Clean up storage
   const storage = getStorage();
   if (paper.storagePath) {
-    await storage.delete(paper.storagePath).catch(() => {});
+    await storage.delete(paper.storagePath).catch((err) => console.error("Failed to delete storage file:", err));
   }
   if (paper.markupPath) {
-    await storage.delete(paper.markupPath).catch(() => {});
+    await storage.delete(paper.markupPath).catch((err) => console.error("Failed to delete markup file:", err));
   }
 
   return NextResponse.json({ success: true });
-}
+});

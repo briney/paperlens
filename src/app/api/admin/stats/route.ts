@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/admin";
+import { withErrorHandler } from "@/lib/api-utils";
 
-export async function GET() {
+export const GET = withErrorHandler(async () => {
   const check = await requireAdmin();
   if (check.error) return check.error;
 
@@ -58,4 +59,4 @@ export async function GET() {
     costThisMonth: monthUsage._sum.cost ?? 0,
     recentJobs,
   });
-}
+});

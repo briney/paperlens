@@ -75,7 +75,7 @@ export default async function AdminDashboardPage() {
         </p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-6">
+      <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">Users</CardTitle>
@@ -150,46 +150,48 @@ export default async function AdminDashboardPage() {
               No jobs have been processed yet.
             </p>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>User</TableHead>
-                  <TableHead>Paper</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Duration</TableHead>
-                  <TableHead>Created</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {recentJobs.map((job) => {
-                  const duration =
-                    job.startedAt && job.completedAt
-                      ? `${((job.completedAt.getTime() - job.startedAt.getTime()) / 1000).toFixed(1)}s`
-                      : "—";
-                  return (
-                    <TableRow key={job.id}>
-                      <TableCell>{job.user.name || job.user.email}</TableCell>
-                      <TableCell className="max-w-48 truncate">
-                        {job.paper.title || "Untitled"}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline">{job.type.replace(/_/g, " ")}</Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={STATUS_VARIANT[job.status] ?? "outline"}>
-                          {job.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>{duration}</TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {job.createdAt.toLocaleDateString()}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>User</TableHead>
+                    <TableHead>Paper</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="hidden md:table-cell">Duration</TableHead>
+                    <TableHead className="hidden md:table-cell">Created</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {recentJobs.map((job) => {
+                    const duration =
+                      job.startedAt && job.completedAt
+                        ? `${((job.completedAt.getTime() - job.startedAt.getTime()) / 1000).toFixed(1)}s`
+                        : "—";
+                    return (
+                      <TableRow key={job.id}>
+                        <TableCell>{job.user.name || job.user.email}</TableCell>
+                        <TableCell className="max-w-48 truncate">
+                          {job.paper.title || "Untitled"}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{job.type.replace(/_/g, " ")}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={STATUS_VARIANT[job.status] ?? "outline"}>
+                            {job.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="hidden md:table-cell">{duration}</TableCell>
+                        <TableCell className="hidden md:table-cell text-muted-foreground">
+                          {job.createdAt.toLocaleDateString()}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
           )}
         </CardContent>
       </Card>

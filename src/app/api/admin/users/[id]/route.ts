@@ -1,15 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/admin";
+import { withErrorHandler } from "@/lib/api-utils";
+import { isValidCuid } from "@/lib/validation";
 
-export async function PATCH(
+export const PATCH = withErrorHandler(async (
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+  { params }: { params: Promise<Record<string, string | string[]>> }
+) => {
   const check = await requireAdmin();
   if (check.error) return check.error;
 
   const { id } = await params;
+  if (typeof id !== "string" || !isValidCuid(id)) {
+    return NextResponse.json({ error: "Invalid user ID" }, { status: 400 });
+  }
+
   const body = await request.json();
 
   // Prevent self-deactivation
@@ -43,4 +49,4 @@ export async function PATCH(
   });
 
   return NextResponse.json(user);
-}
+});
