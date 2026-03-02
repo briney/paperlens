@@ -1,6 +1,28 @@
+import { prisma } from "@/lib/db";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { QuotaFormDialog } from "@/components/admin/quota-form-dialog";
+import { TIER_DEFAULTS } from "@/lib/quota-defaults";
 
-export default function AdminQuotasPage() {
+export default async function AdminQuotasPage() {
+  const users = await prisma.user.findMany({
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      email: true,
+      name: true,
+      quota: true,
+    },
+  });
+
   return (
     <div className="space-y-6">
       <div>
@@ -10,16 +32,60 @@ export default function AdminQuotasPage() {
         </p>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Quotas</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground">
-            Quota management will be implemented in Phase 4.
-          </p>
-        </CardContent>
-      </Card>
+      <div className="grid gap-4 md:grid-cols-3">
+        {(Object.entries(TIER_DEFAULTS) as [string, typeof TIER_DEFAULTS.FREE][]).map(
+          ([tier, defaults]) => (
+            <Card key={tier}>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">{tier} Defaults</CardTitle>
+              </CardHeader>
+              <CardContent className="text-sm space-y-1">
+                <p>{defaults.maxPapersPerDay} papers/day</p>
+                <p>{defaults.maxPapersPerMonth} papers/month</p>
+                <p>{defaults.maxTokensPerMonth.toLocaleString()} tokens/month</p>
+              </CardContent>
+            </Card>
+          )
+        )}
+      </div>
+
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>User</TableHead>
+            <TableHead>Tier</TableHead>
+            <TableHead>Papers/Day</TableHead>
+            <TableHead>Papers/Month</TableHead>
+            <TableHead>Tokens/Month</TableHead>
+            <TableHead>Actions</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {users.map((user) => (
+            <TableRow key={user.id}>
+              <TableCell>
+                <div>
+                  <span className="font-medium">{user.name || "—"}</span>
+                  <span className="ml-2 text-xs text-muted-foreground">{user.email}</span>
+                </div>
+              </TableCell>
+              <TableCell>
+                <Badge variant="outline">{user.quota?.tier ?? "FREE"}</Badge>
+              </TableCell>
+              <TableCell>{user.quota?.maxPapersPerDay ?? TIER_DEFAULTS.FREE.maxPapersPerDay}</TableCell>
+              <TableCell>{user.quota?.maxPapersPerMonth ?? TIER_DEFAULTS.FREE.maxPapersPerMonth}</TableCell>
+              <TableCell>{(user.quota?.maxTokensPerMonth ?? TIER_DEFAULTS.FREE.maxTokensPerMonth).toLocaleString()}</TableCell>
+              <TableCell>
+                <QuotaFormDialog
+                  userId={user.id}
+                  userName={user.name}
+                  quota={user.quota}
+                />
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
     </div>
   );
 }
