@@ -37,8 +37,8 @@ npm install
 docker compose up -d
 
 # 4. Configure environment
-cp .env.example .env
-# Edit .env with your Azure AI Foundry credentials and other settings
+./setup.sh
+# Or manually: copy .env.example to .env and fill in values
 
 # 5. Set up the database
 npm run db:generate
@@ -55,7 +55,7 @@ Open [http://localhost:3000](http://localhost:3000) and register an account.
 
 ## Environment Variables
 
-Copy `.env.example` to `.env` and fill in the required values.
+Run `./setup.sh` to generate your `.env` file interactively — it auto-generates JWT secrets and validates required values. Alternatively, copy `.env.example` to `.env` and fill in the values manually.
 
 | Variable | Required | Description | Example |
 |---|---|---|---|
@@ -68,6 +68,9 @@ Copy `.env.example` to `.env` and fill in the required values.
 | `AZURE_AI_FOUNDRY_API_VERSION` | No | API version (default: `2025-01-01`) | `2025-01-01` |
 | `AZURE_STORAGE_CONNECTION_STRING` | No | Azure Blob Storage connection string (falls back to local `.storage/`) | — |
 | `AZURE_STORAGE_CONTAINER` | No | Blob container name (default: `paperlens-files`) | `paperlens-files` |
+| `ADMIN_EMAIL` | No | Seed admin email (for `npm run db:seed`) | `admin@example.com` |
+| `ADMIN_PASSWORD` | No | Seed admin password | — |
+| `ADMIN_NAME` | No | Seed admin display name | `Admin` |
 | `MAX_UPLOAD_SIZE_MB` | No | Max PDF upload size in MB (default: `50`) | `50` |
 | `NODE_ENV` | No | Environment | `development` / `production` |
 
