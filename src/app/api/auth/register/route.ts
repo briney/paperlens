@@ -32,6 +32,13 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
     );
   }
 
-  const user = await registerUser(email, password, name);
-  return NextResponse.json({ user }, { status: 201 });
+  try {
+    const user = await registerUser(email, password, name);
+    return NextResponse.json({ user }, { status: 201 });
+  } catch (error) {
+    if (error instanceof Error && error.message === "A user with this email already exists") {
+      return NextResponse.json({ error: error.message }, { status: 409 });
+    }
+    throw error;
+  }
 });
