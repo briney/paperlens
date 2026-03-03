@@ -48,12 +48,20 @@ export function isValidPassword(password: string): boolean {
 }
 
 export function isAllowedPaperUrl(url: string): boolean {
-  // Allow any direct PDF URL
-  if (url.toLowerCase().endsWith(".pdf")) return true;
-
   try {
     const parsed = new URL(url);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return false;
+    }
+
     const hostname = parsed.hostname.toLowerCase();
+    if (hostname === "localhost" || hostname.endsWith(".localhost")) {
+      return false;
+    }
+
+    // Allow direct PDF URL submissions after protocol/host checks.
+    if (parsed.pathname.toLowerCase().endsWith(".pdf")) return true;
+
     return ALLOWED_DOMAINS.some(
       (domain) => hostname === domain || hostname.endsWith("." + domain)
     );

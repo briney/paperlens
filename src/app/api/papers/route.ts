@@ -8,6 +8,7 @@ import { withErrorHandler } from "@/lib/api-utils";
 import { isAllowedPaperUrl } from "@/lib/validation";
 import { rateLimit } from "@/lib/rate-limit";
 import { ModelRoutingError, resolveTaskModel } from "@/lib/ai/model-routing";
+import { createPaperStoragePath } from "@/lib/storage/path";
 
 export const POST = withErrorHandler(async (request: NextRequest) => {
   const user = await getCurrentUser();
@@ -49,7 +50,9 @@ async function handlePdfUpload(request: NextRequest, userId: string) {
     return NextResponse.json({ error: "No PDF file provided" }, { status: 400 });
   }
 
-  if (!file.name.toLowerCase().endsWith(".pdf")) {
+  const originalFilename = file.name.split(/[\\/]/).pop() ?? "paper.pdf";
+
+  if (!originalFilename.toLowerCase().endsWith(".pdf")) {
     return NextResponse.json({ error: "Only PDF files are accepted" }, { status: 400 });
   }
 
@@ -80,7 +83,7 @@ async function handlePdfUpload(request: NextRequest, userId: string) {
 
   // Store the PDF
   const storage = getStorage();
-  const storagePath = `papers/${userId}/${Date.now()}-${file.name}`;
+  const storagePath = createPaperStoragePath(userId);
   await storage.upload(storagePath, buffer, "application/pdf");
 
   // Create paper record
@@ -89,7 +92,7 @@ async function handlePdfUpload(request: NextRequest, userId: string) {
       userId,
       source: "UPLOAD",
       storagePath,
-      title: file.name.replace(/\.pdf$/i, ""),
+      title: originalFilename.replace(/\.pdf$/i, ""),
     },
   });
 
@@ -134,10 +137,15 @@ async function handleUrlSubmission(request: NextRequest, userId: string) {
   }
 
   // Basic URL validation
+  let parsedUrl: URL;
   try {
-    new URL(url);
+    parsedUrl = new URL(url);
   } catch {
     return NextResponse.json({ error: "Invalid URL" }, { status: 400 });
+  }
+
+  if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+    return NextResponse.json({ error: "Only HTTP(S) URLs are supported" }, { status: 400 });
   }
 
   if (!isAllowedPaperUrl(url)) {
@@ -162,7 +170,7 @@ async function handleUrlSubmission(request: NextRequest, userId: string) {
   }
 
   // Determine source type: if URL ends with .pdf, it's a direct PDF URL
-  const source = url.toLowerCase().endsWith(".pdf") ? "PDF_URL" : "PAGE_URL";
+  const source = parsedUrl.pathname.toLowerCase().endsWith(".pdf") ? "PDF_URL" : "PAGE_URL";
 
   // Create paper record with placeholder storage path (will be updated by worker)
   const paper = await prisma.paper.create({

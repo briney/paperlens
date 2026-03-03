@@ -1,8 +1,10 @@
 import fs from "fs/promises";
 import path from "path";
 import type { StorageProvider } from "./types";
+import { normalizeStoragePath } from "./path";
 
-const STORAGE_DIR = path.join(process.cwd(), ".storage");
+const STORAGE_DIR = path.resolve(process.cwd(), ".storage");
+const STORAGE_DIR_PREFIX = `${STORAGE_DIR}${path.sep}`;
 
 export class LocalStorageProvider implements StorageProvider {
   private async ensureDir(filePath: string) {
@@ -10,7 +12,14 @@ export class LocalStorageProvider implements StorageProvider {
   }
 
   private resolvePath(storagePath: string): string {
-    return path.join(STORAGE_DIR, storagePath);
+    const normalizedStoragePath = normalizeStoragePath(storagePath);
+    const resolvedPath = path.resolve(STORAGE_DIR, normalizedStoragePath);
+
+    if (resolvedPath !== STORAGE_DIR && !resolvedPath.startsWith(STORAGE_DIR_PREFIX)) {
+      throw new Error("Storage path escapes storage root");
+    }
+
+    return resolvedPath;
   }
 
   async upload(

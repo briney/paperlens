@@ -1,4 +1,5 @@
-import { Worker, Job } from "bullmq";
+import { Job, Worker } from "bullmq";
+import type { JobStatus, Prisma } from "@prisma/client";
 import { redis } from "@/lib/redis";
 import { prisma } from "@/lib/db";
 import { getStorage } from "@/lib/storage";
@@ -8,6 +9,7 @@ import { resolveUrl, downloadPdf } from "@/lib/ingestion/url-resolver";
 import { validatePdfBytes } from "@/lib/ingestion/pdf-validator";
 import { getAnalyzer } from "@/lib/analyzers";
 import { sanitizeProviderErrorText } from "@/lib/ai/error-sanitizer";
+import { createPaperStoragePath } from "@/lib/storage/path";
 import { paperQueue } from "./index";
 import type {
   PaperJobName,
@@ -16,17 +18,111 @@ import type {
   RunAnalysisJobData,
 } from "./index";
 
-async function handleFetchUrl(job: Job<FetchUrlJobData>) {
-  const { paperId, url, userId, parseModelSlug, summaryModelSlug } = job.data;
+const PROCESSABLE_STATUSES: JobStatus[] = ["QUEUED", "PROCESSING", "FAILED"];
 
-  // Mark job as processing
-  await prisma.job.update({
-    where: { id: job.id! },
+class JobCancelledError extends Error {
+  constructor(jobId: string) {
+    super(`Job ${jobId} was cancelled`);
+    this.name = "JobCancelledError";
+  }
+}
+
+function isCancelledError(error: Error): boolean {
+  return error.name === "JobCancelledError";
+}
+
+function getQueueJobId(job: Job): string {
+  if (typeof job.id !== "string") {
+    throw new Error("Queue job has no string ID");
+  }
+  return job.id;
+}
+
+function getDbJobIdFromEvent(job: Job | undefined): string | null {
+  if (!job) return null;
+  if (job.name === "run-analysis") {
+    const data = job.data as Partial<RunAnalysisJobData> | undefined;
+    if (data && typeof data.jobId === "string") {
+      return data.jobId;
+    }
+  }
+  return typeof job.id === "string" ? job.id : null;
+}
+
+async function assertJobNotCancelled(jobId: string): Promise<void> {
+  const existing = await prisma.job.findUnique({
+    where: { id: jobId },
+    select: { status: true },
+  });
+
+  if (existing?.status === "CANCELLED") {
+    throw new JobCancelledError(jobId);
+  }
+}
+
+async function markJobProcessing(jobId: string): Promise<void> {
+  const updated = await prisma.job.updateMany({
+    where: {
+      id: jobId,
+      status: { in: PROCESSABLE_STATUSES },
+    },
     data: { status: "PROCESSING", startedAt: new Date() },
   });
 
+  if (updated.count === 0) {
+    await assertJobNotCancelled(jobId);
+    throw new Error(`Job ${jobId} is not in a processable state`);
+  }
+}
+
+async function markJobCompleted(
+  jobId: string,
+  result?: Prisma.InputJsonValue
+): Promise<void> {
+  const data: Prisma.JobUpdateManyMutationInput = {
+    status: "COMPLETED",
+    completedAt: new Date(),
+  };
+  if (result !== undefined) {
+    data.result = result;
+  }
+
+  const updated = await prisma.job.updateMany({
+    where: { id: jobId, status: { not: "CANCELLED" } },
+    data,
+  });
+
+  if (updated.count === 0) {
+    await assertJobNotCancelled(jobId);
+    throw new Error(`Job ${jobId} could not be marked completed`);
+  }
+}
+
+async function markJobFailed(jobId: string, errorMessage: string): Promise<void> {
+  await prisma.job.updateMany({
+    where: {
+      id: jobId,
+      status: { in: PROCESSABLE_STATUSES },
+    },
+    data: {
+      status: "FAILED",
+      error: errorMessage,
+      completedAt: new Date(),
+    },
+  });
+}
+
+async function handleFetchUrl(job: Job<FetchUrlJobData>) {
+  const { paperId, url, userId, parseModelSlug, summaryModelSlug } = job.data;
+  const dbJobId = getQueueJobId(job);
+
+  await markJobProcessing(dbJobId);
+  await assertJobNotCancelled(dbJobId);
+
   // Resolve URL to a downloadable PDF URL
   const resolved = await resolveUrl(url);
+
+  await assertJobNotCancelled(dbJobId);
 
   // Download the PDF
   const pdfBuffer = await downloadPdf(resolved.pdfUrl);
@@ -37,10 +133,11 @@ async function handleFetchUrl(job: Job<FetchUrlJobData>) {
     throw new Error(`Downloaded file is not a valid PDF: ${validation.error}`);
   }
 
+  await assertJobNotCancelled(dbJobId);
+
   // Store in blob storage
   const storage = getStorage();
-  const filename = `${Date.now()}.pdf`;
-  const storagePath = `papers/${userId}/${filename}`;
+  const storagePath = createPaperStoragePath(userId);
   await storage.upload(storagePath, pdfBuffer, "application/pdf");
 
   // Update paper with storage path and source type
@@ -52,11 +149,8 @@ async function handleFetchUrl(job: Job<FetchUrlJobData>) {
     },
   });
 
-  // Mark this fetch job as completed
-  await prisma.job.update({
-    where: { id: job.id! },
-    data: { status: "COMPLETED", completedAt: new Date() },
-  });
+  await markJobCompleted(dbJobId);
+  await assertJobNotCancelled(dbJobId);
 
   // Enqueue the parse-pdf follow-up job
   const parseJob = await prisma.job.create({
@@ -80,16 +174,16 @@ async function handleFetchUrl(job: Job<FetchUrlJobData>) {
 
 async function handleParsePdf(job: Job<ParsePdfJobData>) {
   const { paperId, storagePath, userId, parseModelSlug, summaryModelSlug } = job.data;
+  const dbJobId = getQueueJobId(job);
 
-  // Mark job as processing
-  await prisma.job.update({
-    where: { id: job.id! },
-    data: { status: "PROCESSING", startedAt: new Date() },
-  });
+  await markJobProcessing(dbJobId);
+  await assertJobNotCancelled(dbJobId);
 
   // Download PDF from storage
   const storage = getStorage();
   const pdfBuffer = await storage.download(storagePath);
+
+  await assertJobNotCancelled(dbJobId);
 
   // Call AI provider to parse the document
   const provider = await getAIProvider();
@@ -97,6 +191,8 @@ async function handleParsePdf(job: Job<ParsePdfJobData>) {
     taskType: "PARSE_PDF",
     modelSlug: parseModelSlug,
   });
+
+  await assertJobNotCancelled(dbJobId);
 
   // Store parsed markup in storage
   const markupPath = storagePath.replace(/\.pdf$/, ".md");
@@ -125,19 +221,12 @@ async function handleParsePdf(job: Job<ParsePdfJobData>) {
     },
   });
 
-  // Mark job as completed
-  await prisma.job.update({
-    where: { id: job.id! },
-    data: {
-      status: "COMPLETED",
-      completedAt: new Date(),
-      result: {
-        model: result.model,
-        inputTokens: result.usage.inputTokens,
-        outputTokens: result.usage.outputTokens,
-      },
-    },
+  await markJobCompleted(dbJobId, {
+    model: result.model,
+    inputTokens: result.usage.inputTokens,
+    outputTokens: result.usage.outputTokens,
   });
+  await assertJobNotCancelled(dbJobId);
 
   // Auto-enqueue summarization
   const summarizeJob = await prisma.job.create({
@@ -165,12 +254,10 @@ async function handleParsePdf(job: Job<ParsePdfJobData>) {
 
 async function handleRunAnalysis(job: Job<RunAnalysisJobData>) {
   const { paperId, jobId, analyzerType, modelSlug, userId } = job.data;
+  const dbJobId = jobId;
 
-  // Mark job as processing
-  await prisma.job.update({
-    where: { id: jobId },
-    data: { status: "PROCESSING", startedAt: new Date() },
-  });
+  await markJobProcessing(dbJobId);
+  await assertJobNotCancelled(dbJobId);
 
   // Load analyzer from registry
   const analyzer = getAnalyzer(analyzerType);
@@ -191,6 +278,8 @@ async function handleRunAnalysis(job: Job<RunAnalysisJobData>) {
   const storage = getStorage();
   const markupBuffer = await storage.download(paper.markupPath);
   const markup = markupBuffer.toString("utf-8");
+
+  await assertJobNotCancelled(dbJobId);
 
   // Get AI provider and execute analyzer
   const provider = await getAIProvider();
@@ -218,6 +307,8 @@ async function handleRunAnalysis(job: Job<RunAnalysisJobData>) {
     ai: taskScopedProvider,
     modelSlug,
   });
+
+  await assertJobNotCancelled(dbJobId);
 
   // Store analysis content in blob storage
   const analysisPath = paper.markupPath.replace(/\.md$/, `-${analyzerType.toLowerCase()}.md`);
@@ -251,18 +342,10 @@ async function handleRunAnalysis(job: Job<RunAnalysisJobData>) {
     },
   });
 
-  // Mark job as completed
-  await prisma.job.update({
-    where: { id: jobId },
-    data: {
-      status: "COMPLETED",
-      completedAt: new Date(),
-      result: {
-        model: result.model,
-        inputTokens: result.usage.inputTokens,
-        outputTokens: result.usage.outputTokens,
-      },
-    },
+  await markJobCompleted(dbJobId, {
+    model: result.model,
+    inputTokens: result.usage.inputTokens,
+    outputTokens: result.usage.outputTokens,
   });
 }
 
@@ -297,23 +380,19 @@ export function createPaperWorker() {
   });
 
   worker.on("failed", (job, err) => {
+    const dbJobId = getDbJobIdFromEvent(job);
+    if (isCancelledError(err)) {
+      console.log(`Job ${dbJobId ?? job?.id} (${job?.name}) cancelled`);
+      return;
+    }
+
     const sanitizedError = sanitizeProviderErrorText(err.message);
     console.error(`Job ${job?.id} (${job?.name}) failed:`, sanitizedError);
-    // Update job status to FAILED in DB
-    if (job?.id) {
-      prisma.job
-        .update({
-          where: { id: job.id },
-          data: {
-            status: "FAILED",
-            error: sanitizedError,
-            completedAt: new Date(),
-          },
-        })
-        .catch((e: Error) =>
-          console.error("Failed to update job status:", e.message)
-        );
-    }
+    if (!dbJobId) return;
+
+    void markJobFailed(dbJobId, sanitizedError).catch((error: Error) =>
+      console.error("Failed to update job status:", error.message)
+    );
   });
 
   return worker;

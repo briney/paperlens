@@ -1,30 +1,34 @@
+import { normalizeHttpUrl, safeFetch } from "./network-safety";
+
 export interface ResolvedUrl {
   pdfUrl: string;
   sourceType: "PDF_URL" | "PAGE_URL";
 }
 
 export async function resolveUrl(url: string): Promise<ResolvedUrl> {
+  const normalizedUrl = normalizeHttpUrl(url).toString();
+
   // Try arXiv pattern first (no network request needed)
-  const arxivResult = resolveArxiv(url);
+  const arxivResult = resolveArxiv(normalizedUrl);
   if (arxivResult) return arxivResult;
 
   // Try bioRxiv/medRxiv pattern
-  const biorxivResult = resolveBiorxiv(url);
+  const biorxivResult = resolveBiorxiv(normalizedUrl);
   if (biorxivResult) return biorxivResult;
 
   // Check if URL directly points to a PDF
-  const directPdf = await checkDirectPdf(url);
-  if (directPdf) return { pdfUrl: url, sourceType: "PDF_URL" };
+  const directPdfUrl = await checkDirectPdf(normalizedUrl);
+  if (directPdfUrl) return { pdfUrl: directPdfUrl, sourceType: "PDF_URL" };
 
   // Try DOI resolution
-  const doiResult = resolveDoi(url);
+  const doiResult = resolveDoi(normalizedUrl);
   if (doiResult) {
     const resolved = await followDoiRedirect(doiResult);
     if (resolved) return resolved;
   }
 
   // Generic page: scan HTML for PDF links
-  const htmlResult = await scanPageForPdf(url);
+  const htmlResult = await scanPageForPdf(normalizedUrl);
   if (htmlResult) return htmlResult;
 
   throw new Error(
@@ -75,32 +79,60 @@ function resolveDoi(url: string): string | null {
   return null;
 }
 
-async function checkDirectPdf(url: string): Promise<boolean> {
+async function checkDirectPdf(url: string): Promise<string | null> {
   try {
-    const response = await fetch(url, {
-      method: "HEAD",
-      redirect: "follow",
-      signal: AbortSignal.timeout(10000),
-    });
+    const { response, finalUrl } = await safeFetch(
+      url,
+      {
+        method: "HEAD",
+        signal: AbortSignal.timeout(10000),
+      }
+    );
+
     const contentType = response.headers.get("content-type") ?? "";
-    return contentType.includes("application/pdf");
+    if (contentType.includes("application/pdf")) {
+      return finalUrl;
+    }
+
+    if (response.status !== 405 && response.status !== 501) {
+      return null;
+    }
+
+    const fallback = await safeFetch(
+      url,
+      {
+        method: "GET",
+        signal: AbortSignal.timeout(10000),
+        headers: {
+          Accept: "application/pdf,*/*",
+          Range: "bytes=0-0",
+        },
+      }
+    );
+
+    const fallbackContentType = fallback.response.headers.get("content-type") ?? "";
+    if (fallbackContentType.includes("application/pdf")) {
+      return fallback.finalUrl;
+    }
+
+    return null;
   } catch {
-    return false;
+    return null;
   }
 }
 
 async function followDoiRedirect(doi: string): Promise<ResolvedUrl | null> {
   try {
-    const response = await fetch(`https://doi.org/${doi}`, {
-      method: "GET",
-      redirect: "follow",
-      signal: AbortSignal.timeout(15000),
-      headers: { Accept: "text/html" },
-    });
+    const { response, finalUrl } = await safeFetch(
+      `https://doi.org/${doi}`,
+      {
+        method: "GET",
+        signal: AbortSignal.timeout(15000),
+        headers: { Accept: "text/html" },
+      }
+    );
 
     if (!response.ok) return null;
-
-    const finalUrl = response.url;
 
     // Check if the DOI resolved to an arXiv page
     const arxivResult = resolveArxiv(finalUrl);
@@ -120,16 +152,19 @@ async function followDoiRedirect(doi: string): Promise<ResolvedUrl | null> {
 
 async function scanPageForPdf(url: string): Promise<ResolvedUrl | null> {
   try {
-    const response = await fetch(url, {
-      redirect: "follow",
-      signal: AbortSignal.timeout(15000),
-      headers: { Accept: "text/html" },
-    });
+    const { response, finalUrl } = await safeFetch(
+      url,
+      {
+        method: "GET",
+        signal: AbortSignal.timeout(15000),
+        headers: { Accept: "text/html" },
+      }
+    );
 
     if (!response.ok) return null;
 
     const html = await response.text();
-    return scanHtmlForPdfLink(html, response.url);
+    return scanHtmlForPdfLink(html, finalUrl);
   } catch {
     return null;
   }
@@ -176,13 +211,16 @@ function scanHtmlForPdfLink(
 }
 
 export async function downloadPdf(url: string): Promise<Buffer> {
-  const response = await fetch(url, {
-    redirect: "follow",
-    signal: AbortSignal.timeout(60000),
-  });
+  const { response, finalUrl } = await safeFetch(
+    url,
+    {
+      method: "GET",
+      signal: AbortSignal.timeout(60000),
+    }
+  );
 
   if (!response.ok) {
-    throw new Error(`Failed to download PDF (${response.status}): ${url}`);
+    throw new Error(`Failed to download PDF (${response.status}): ${finalUrl}`);
   }
 
   const arrayBuffer = await response.arrayBuffer();

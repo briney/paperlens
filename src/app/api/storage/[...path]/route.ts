@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { getStorage } from "@/lib/storage";
 import { withErrorHandler } from "@/lib/api-utils";
+import { isUserPaperPath, normalizeStoragePath } from "@/lib/storage/path";
 
 export const GET = withErrorHandler(async (
   _request: NextRequest,
@@ -14,10 +15,17 @@ export const GET = withErrorHandler(async (
 
   const { path } = await params;
   const pathSegments = Array.isArray(path) ? path : [path];
-  const storagePath = decodeURIComponent(pathSegments.join("/"));
+  const rawPath = pathSegments.join("/");
+
+  let storagePath: string;
+  try {
+    storagePath = normalizeStoragePath(rawPath);
+  } catch {
+    return NextResponse.json({ error: "Invalid storage path" }, { status: 400 });
+  }
 
   // Only allow users to access their own files
-  if (!storagePath.includes(user.id)) {
+  if (!isUserPaperPath(storagePath, user.id)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
