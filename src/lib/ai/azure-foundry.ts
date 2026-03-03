@@ -1,10 +1,12 @@
 import type { JobType } from "@prisma/client";
 import {
   resolveInvocationForTask,
+  resolveInvocationForSpecificModel,
   ModelRoutingError,
   type ModelInvocationConfig,
 } from "./model-routing";
 import { sanitizeProviderErrorText } from "./error-sanitizer";
+import { getBuiltInTaskPrompt, resolveTaskPrompt } from "./task-prompts";
 import type {
   AIProvider,
   Message,
@@ -28,34 +30,37 @@ interface InvocationSelection {
   modelName: string;
 }
 
-const PARSE_SYSTEM_PROMPT = `You are a scientific document parser. Extract the full text content of the provided PDF document as clean markdown. Preserve the document structure including:
-- Title
-- Authors
-- Abstract
-- Section headings
-- Body text
-- Figures and table captions
-- References
-
-At the very beginning, output the metadata in a YAML front matter block:
-\`\`\`yaml
-title: "Paper Title"
-authors: "Author1, Author2, Author3"
-doi: "10.xxxx/xxxxx" (if found)
-journal: "Journal Name" (if found)
-date: "YYYY-MM-DD" (if found)
-\`\`\`
-
-Then output the full document content as clean markdown.`;
-
 const PARSE_USER_PROMPT =
   "Parse this scientific paper and output it as structured markdown with YAML front matter metadata.";
 
-export function buildChatParseBody(modelName: string, base64Pdf: string): Record<string, unknown> {
+const POST_OCR_NORMALIZATION_USER_PROMPT = `Reformat the OCR output below into clean markdown using the required structure from the system instructions.
+
+Requirements:
+- Preserve all scientific content, including equations, tables, references, and section ordering.
+- Correct obvious OCR artifacts when confidence is high.
+- Do not invent content.
+- Keep the output concise and machine-parseable markdown.
+
+OCR content starts below:
+`;
+
+function mergeUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
+  return {
+    inputTokens: a.inputTokens + b.inputTokens,
+    outputTokens: a.outputTokens + b.outputTokens,
+    totalTokens: a.totalTokens + b.totalTokens,
+  };
+}
+
+export function buildChatParseBody(
+  modelName: string,
+  base64Pdf: string,
+  systemPrompt: string
+): Record<string, unknown> {
   return {
     model: modelName,
     messages: [
-      { role: "system", content: PARSE_SYSTEM_PROMPT },
+      { role: "system", content: systemPrompt },
       {
         role: "user",
         content: [
@@ -159,19 +164,32 @@ export class AzureFoundryProvider implements AIProvider {
       );
     }
 
+    const promptConfig = await resolveTaskPrompt("PARSE_PDF");
+    const parseSystemPrompt = promptConfig.prompt ?? getBuiltInTaskPrompt("PARSE_PDF");
+    if (!parseSystemPrompt) {
+      throw new Error("No system prompt is configured for PARSE_PDF.");
+    }
+
     const base64Pdf = pdfBuffer.toString("base64");
     let content = "";
     let usage: TokenUsage;
+    let normalizationFailed = false;
 
     const imageToTextPreferred = shouldUseImageToTextForParse(invocation.invocation);
     if (imageToTextPreferred) {
-      const body = buildImageToTextParseBody(invocation.modelName, base64Pdf);
-      const data = await this.sendImageToTextParse(invocation.invocation, body);
-      content = extractImageToTextContent(data);
-      usage = this.extractUsage(data);
+      const ocrResult = await this.parseWithImageToText({
+        invocation: invocation.invocation,
+        modelName: invocation.modelName,
+        base64Pdf,
+        parseSystemPrompt,
+        preferredNormalizationModelSlug: promptConfig.postOcrNormalizationModelSlug,
+      });
+      content = ocrResult.content;
+      usage = ocrResult.usage;
+      normalizationFailed = ocrResult.normalizationFailed;
     } else {
       try {
-        const body = buildChatParseBody(invocation.modelName, base64Pdf);
+        const body = buildChatParseBody(invocation.modelName, base64Pdf, parseSystemPrompt);
         const data = await this.sendOpenAIChatCompletion(invocation.invocation, body, "parse");
         content = this.extractOpenAIContent(data);
         usage = this.extractUsage(data);
@@ -180,20 +198,29 @@ export class AzureFoundryProvider implements AIProvider {
           throw error;
         }
 
-        const body = buildImageToTextParseBody(invocation.modelName, base64Pdf);
-        const data = await this.sendImageToTextParse(invocation.invocation, body);
-        content = extractImageToTextContent(data);
-        usage = this.extractUsage(data);
+        const ocrResult = await this.parseWithImageToText({
+          invocation: invocation.invocation,
+          modelName: invocation.modelName,
+          base64Pdf,
+          parseSystemPrompt,
+          preferredNormalizationModelSlug: promptConfig.postOcrNormalizationModelSlug,
+        });
+        content = ocrResult.content;
+        usage = ocrResult.usage;
+        normalizationFailed = ocrResult.normalizationFailed;
       }
     }
 
     const { title, authors, metadata } = this.parseMetadata(content);
+    const mergedMetadata = normalizationFailed
+      ? { ...(metadata ?? {}), parseNormalization: "failed_fallback_raw" }
+      : metadata;
 
     return {
       markup: content,
       title,
       authors,
-      metadata,
+      metadata: mergedMetadata,
       usage,
       model: invocation.modelName,
     };
@@ -236,6 +263,127 @@ export class AzureFoundryProvider implements AIProvider {
       usage: this.extractUsage(data),
       model: invocation.modelName,
     };
+  }
+
+  private async parseWithImageToText(args: {
+    invocation: ModelInvocationConfig;
+    modelName: string;
+    base64Pdf: string;
+    parseSystemPrompt: string;
+    preferredNormalizationModelSlug: string | null;
+  }): Promise<{ content: string; usage: TokenUsage; normalizationFailed: boolean }> {
+    const body = buildImageToTextParseBody(args.modelName, args.base64Pdf);
+    const data = await this.sendImageToTextParse(args.invocation, body);
+    const ocrContent = extractImageToTextContent(data);
+    const ocrUsage = this.extractUsage(data);
+
+    if (ocrContent.trim().length === 0) {
+      return {
+        content: ocrContent,
+        usage: ocrUsage,
+        normalizationFailed: false,
+      };
+    }
+
+    const normalized = await this.tryNormalizeOcrContent({
+      rawContent: ocrContent,
+      parseSystemPrompt: args.parseSystemPrompt,
+      preferredModelSlug: args.preferredNormalizationModelSlug,
+    });
+
+    if (!normalized) {
+      return {
+        content: ocrContent,
+        usage: ocrUsage,
+        normalizationFailed: true,
+      };
+    }
+
+    return {
+      content: normalized.content,
+      usage: mergeUsage(ocrUsage, normalized.usage),
+      normalizationFailed: false,
+    };
+  }
+
+  private async tryNormalizeOcrContent(args: {
+    rawContent: string;
+    parseSystemPrompt: string;
+    preferredModelSlug: string | null;
+  }): Promise<{ content: string; usage: TokenUsage } | null> {
+    try {
+      const selection = await this.resolvePostOcrNormalizationInvocation(args.preferredModelSlug);
+      let content = "";
+      let usage: TokenUsage;
+
+      if (selection.invocation.apiStyle === "ANTHROPIC_MESSAGES") {
+        const data = await this.sendAnthropicMessages(selection.invocation, {
+          model: selection.modelName,
+          messages: [
+            { role: "system", content: args.parseSystemPrompt },
+            {
+              role: "user",
+              content: `${POST_OCR_NORMALIZATION_USER_PROMPT}\n${args.rawContent}`,
+            },
+          ],
+          temperature: 0,
+          maxTokens: 8192,
+        });
+        content = this.extractAnthropicContent(data);
+        usage = this.extractUsage(data);
+      } else {
+        const body: Record<string, unknown> = {
+          model: selection.modelName,
+          messages: [
+            { role: "system", content: args.parseSystemPrompt },
+            {
+              role: "user",
+              content: `${POST_OCR_NORMALIZATION_USER_PROMPT}\n${args.rawContent}`,
+            },
+          ],
+          temperature: 0,
+          max_tokens: 8192,
+        };
+        const data = await this.sendOpenAIChatCompletion(
+          selection.invocation,
+          body,
+          "completion"
+        );
+        content = this.extractOpenAIContent(data);
+        usage = this.extractUsage(data);
+      }
+
+      const normalizedContent = content.trim();
+      if (normalizedContent.length === 0) {
+        return null;
+      }
+
+      return {
+        content: normalizedContent,
+        usage,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? sanitizeProviderErrorText(error.message) : "Unknown error";
+      console.warn(`Post-OCR normalization failed: ${message}`);
+      return null;
+    }
+  }
+
+  private async resolvePostOcrNormalizationInvocation(
+    preferredModelSlug: string | null
+  ): Promise<InvocationSelection> {
+    if (preferredModelSlug) {
+      const { model, invocation } = await resolveInvocationForSpecificModel({
+        taskType: "SUMMARIZE",
+        modelSlug: preferredModelSlug,
+      });
+      return {
+        invocation,
+        modelName: model.deploymentName,
+      };
+    }
+
+    return this.resolveInvocation("SUMMARIZE");
   }
 
   private async resolveInvocation(

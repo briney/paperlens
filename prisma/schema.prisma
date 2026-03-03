@@ -173,6 +173,7 @@ model ModelConfig {
   config             Json? // additional model-specific config
 
   taskDefaults TaskModelPolicy[] @relation("TaskDefaultModel")
+  postOcrNormalizationPolicies TaskModelPolicy[] @relation("TaskPostOcrNormalizationModel")
 }
 
 enum ModelCategory {
@@ -198,6 +199,9 @@ model TaskModelPolicy {
   taskType           JobType      @unique
   defaultModelSlug   String?
   defaultModel       ModelConfig? @relation("TaskDefaultModel", fields: [defaultModelSlug], references: [slug], onDelete: SetNull, onUpdate: Cascade)
+  systemPromptOverride String?
+  postOcrNormalizationModelSlug String?
+  postOcrNormalizationModel ModelConfig? @relation("TaskPostOcrNormalizationModel", fields: [postOcrNormalizationModelSlug], references: [slug], onDelete: SetNull, onUpdate: Cascade)
   allowUserOverride  Boolean      @default(true)
   fallbackModelSlugs Json?
   constraints        Json?

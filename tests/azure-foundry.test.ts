@@ -20,7 +20,11 @@ test("buildImageToTextParseBody creates top-level document payload", () => {
 });
 
 test("buildChatParseBody creates chat completions parse payload", () => {
-  const body = buildChatParseBody("mistral-document-ai-2512", "abc123==");
+  const body = buildChatParseBody(
+    "mistral-document-ai-2512",
+    "abc123==",
+    "System parse prompt"
+  );
   const messages = body.messages as
     | Array<{
       role?: string;
@@ -31,6 +35,7 @@ test("buildChatParseBody creates chat completions parse payload", () => {
   assert.ok(Array.isArray(messages));
   assert.equal(messages?.length, 2);
   assert.equal(messages?.[0]?.role, "system");
+  assert.equal(messages?.[0]?.content, "System parse prompt");
   assert.equal(messages?.[1]?.role, "user");
 
   const userContent = messages?.[1]?.content as Array<Record<string, unknown>> | undefined;

@@ -36,6 +36,12 @@ interface ResolveTaskModelArgs {
   requestedModelSlug?: string;
 }
 
+interface ResolveSpecificModelForTaskArgs {
+  taskType: JobType;
+  modelSlug: string;
+  constraints?: Record<string, boolean>;
+}
+
 interface CompatibleTaskModel {
   slug: string;
   displayName: string;
@@ -137,6 +143,42 @@ export function isModelCompatibleWithTask(
   }
 
   return true;
+}
+
+export async function resolveSpecificModelForTask(
+  args: ResolveSpecificModelForTaskArgs
+): Promise<ModelConfig> {
+  const { taskType, modelSlug, constraints } = args;
+  const model = await prisma.modelConfig.findUnique({
+    where: { slug: modelSlug },
+  });
+
+  if (!model || !model.isActive) {
+    throw new ModelRoutingError(
+      "MODEL_NOT_FOUND",
+      `Model \"${modelSlug}\" is missing or inactive.`,
+      404
+    );
+  }
+
+  if (!isModelCompatibleWithTask(model, taskType, constraints)) {
+    throw new ModelRoutingError(
+      "MODEL_NOT_COMPATIBLE_WITH_TASK",
+      `Model \"${model.slug}\" does not support task ${taskType}.`
+    );
+  }
+
+  return model;
+}
+
+export async function resolveInvocationForSpecificModel(
+  args: ResolveSpecificModelForTaskArgs
+): Promise<{ model: ModelConfig; invocation: ModelInvocationConfig }> {
+  const model = await resolveSpecificModelForTask(args);
+  return {
+    model,
+    invocation: normalizeInvocationConfig(model),
+  };
 }
 
 function normalizeInvocationConfig(model: ModelConfig): ModelInvocationConfig {

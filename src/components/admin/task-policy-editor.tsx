@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import {
   Select,
@@ -23,8 +24,12 @@ interface ModelOption {
 interface TaskPolicyEditorProps {
   taskType: string;
   models: ModelOption[];
+  normalizationModels: ModelOption[];
+  builtInPrompt: string | null;
   initialPolicy?: {
     defaultModelSlug?: string | null;
+    systemPromptOverride?: string | null;
+    postOcrNormalizationModelSlug?: string | null;
     allowUserOverride?: boolean;
     fallbackModelSlugs?: string[];
     constraints?: Record<string, boolean> | null;
@@ -34,11 +39,19 @@ interface TaskPolicyEditorProps {
 export function TaskPolicyEditor({
   taskType,
   models,
+  normalizationModels,
+  builtInPrompt,
   initialPolicy,
 }: TaskPolicyEditorProps) {
   const router = useRouter();
   const [defaultModelSlug, setDefaultModelSlug] = useState(
     initialPolicy?.defaultModelSlug ?? ""
+  );
+  const [systemPromptOverride, setSystemPromptOverride] = useState(
+    initialPolicy?.systemPromptOverride ?? ""
+  );
+  const [postOcrNormalizationModelSlug, setPostOcrNormalizationModelSlug] = useState(
+    initialPolicy?.postOcrNormalizationModelSlug ?? ""
   );
   const [allowUserOverride, setAllowUserOverride] = useState(
     initialPolicy?.allowUserOverride ?? true
@@ -69,6 +82,12 @@ export function TaskPolicyEditor({
         body: JSON.stringify({
           taskType,
           defaultModelSlug: defaultModelSlug || null,
+          systemPromptOverride:
+            systemPromptOverride.trim().length > 0 ? systemPromptOverride : null,
+          postOcrNormalizationModelSlug:
+            taskType === "PARSE_PDF"
+              ? (postOcrNormalizationModelSlug || null)
+              : null,
           allowUserOverride,
           fallbackModelSlugs,
           constraints: parsedConstraints,
@@ -104,6 +123,8 @@ export function TaskPolicyEditor({
 
       toast.success(`${taskType} policy removed`);
       setDefaultModelSlug("");
+      setSystemPromptOverride("");
+      setPostOcrNormalizationModelSlug("");
       setAllowUserOverride(true);
       setFallbackModelSlugs("");
       setConstraints("");
@@ -121,8 +142,51 @@ export function TaskPolicyEditor({
       <div>
         <h3 className="font-medium">{taskType}</h3>
         <p className="text-xs text-muted-foreground">
-          Configure default model selection and override behavior for this task.
+          Configure prompt behavior and model routing for this task.
         </p>
+      </div>
+
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <Label>System Prompt</Label>
+          <span className="text-xs text-muted-foreground">
+            {systemPromptOverride.trim().length > 0
+              ? "Customized"
+              : builtInPrompt
+              ? "Using default"
+              : "No default"}
+          </span>
+        </div>
+        <Textarea
+          value={systemPromptOverride}
+          onChange={(e) => setSystemPromptOverride(e.target.value)}
+          placeholder={builtInPrompt ?? "No built-in default prompt for this task yet."}
+          rows={12}
+          className="font-mono text-xs"
+        />
+        <div className="flex justify-end">
+          {systemPromptOverride.trim().length > 0 ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setSystemPromptOverride("")}
+              disabled={loading}
+            >
+              Reset Prompt to Default
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setSystemPromptOverride(builtInPrompt ?? "")}
+              disabled={loading || !builtInPrompt}
+            >
+              Load Default Prompt
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="space-y-2">
@@ -141,6 +205,33 @@ export function TaskPolicyEditor({
           </SelectContent>
         </Select>
       </div>
+
+      {taskType === "PARSE_PDF" && (
+        <div className="space-y-2">
+          <Label>Post-OCR Normalization Model</Label>
+          <Select
+            value={postOcrNormalizationModelSlug || "__summarize_default"}
+            onValueChange={(v) =>
+              setPostOcrNormalizationModelSlug(v === "__summarize_default" ? "" : v)
+            }
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Use SUMMARIZE default model" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__summarize_default">Use SUMMARIZE default model</SelectItem>
+              {normalizationModels.map((model) => (
+                <SelectItem key={model.slug} value={model.slug}>
+                  {model.displayName}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            Used when the selected parser runs OCR and a prompt-driven normalization pass is needed.
+          </p>
+        </div>
+      )}
 
       <div className="flex items-center gap-2">
         <Switch checked={allowUserOverride} onCheckedChange={setAllowUserOverride} />

@@ -3,9 +3,13 @@ import { requireAdmin } from "@/lib/admin";
 import { withErrorHandler } from "@/lib/api-utils";
 import { prisma } from "@/lib/db";
 import {
+  ModelRoutingError,
   parseTaskType,
   isModelCompatibleWithTask,
+  resolveSpecificModelForTask,
 } from "@/lib/ai/model-routing";
+
+const MAX_SYSTEM_PROMPT_LENGTH = 20_000;
 
 function toOptionalString(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
@@ -41,6 +45,45 @@ function parseBooleanMap(value: unknown): Record<string, boolean> | undefined {
   return map;
 }
 
+function parseSystemPromptOverride(value: unknown): {
+  value: string | null | undefined;
+  error?: string;
+} {
+  if (value === undefined) return { value: undefined };
+  if (value === null) return { value: null };
+  if (typeof value !== "string") {
+    return { value: undefined, error: "systemPromptOverride must be a string or null" };
+  }
+
+  if (value.trim().length === 0) {
+    return { value: null };
+  }
+
+  if (value.length > MAX_SYSTEM_PROMPT_LENGTH) {
+    return { value: undefined, error: `systemPromptOverride must be <= ${MAX_SYSTEM_PROMPT_LENGTH} characters` };
+  }
+
+  return { value };
+}
+
+function parseOptionalModelSlug(value: unknown): {
+  value: string | null | undefined;
+  error?: string;
+} {
+  if (value === undefined) return { value: undefined };
+  if (value === null) return { value: null };
+  if (typeof value !== "string") {
+    return { value: undefined, error: "postOcrNormalizationModelSlug must be a string or null" };
+  }
+
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return { value: null };
+  }
+
+  return { value: trimmed };
+}
+
 export const GET = withErrorHandler(async () => {
   const check = await requireAdmin();
   if (check.error) return check.error;
@@ -48,6 +91,13 @@ export const GET = withErrorHandler(async () => {
   const policies = await prisma.taskModelPolicy.findMany({
     include: {
       defaultModel: {
+        select: {
+          slug: true,
+          displayName: true,
+          isActive: true,
+        },
+      },
+      postOcrNormalizationModel: {
         select: {
           slug: true,
           displayName: true,
@@ -76,9 +126,17 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
   const allowUserOverride = typeof body.allowUserOverride === "boolean" ? body.allowUserOverride : true;
   const fallbackModelSlugs = parseStringArray(body.fallbackModelSlugs);
   const constraints = parseBooleanMap(body.constraints);
+  const prompt = parseSystemPromptOverride(body.systemPromptOverride);
+  const postOcrModel = parseOptionalModelSlug(body.postOcrNormalizationModelSlug);
 
   if (body.constraints !== undefined && constraints === undefined) {
     return NextResponse.json({ error: "constraints must be an object of booleans" }, { status: 400 });
+  }
+  if (prompt.error) {
+    return NextResponse.json({ error: prompt.error }, { status: 400 });
+  }
+  if (postOcrModel.error) {
+    return NextResponse.json({ error: postOcrModel.error }, { status: 400 });
   }
 
   if (defaultModelSlug) {
@@ -92,10 +150,40 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     }
   }
 
+  const systemPromptOverride = prompt.value ?? null;
+
+  const requestedPostOcrModelSlug = postOcrModel.value ?? null;
+  if (taskType !== "PARSE_PDF" && requestedPostOcrModelSlug) {
+    return NextResponse.json(
+      { error: "postOcrNormalizationModelSlug is only supported for PARSE_PDF" },
+      { status: 400 }
+    );
+  }
+
+  const postOcrNormalizationModelSlug = taskType === "PARSE_PDF"
+    ? requestedPostOcrModelSlug
+    : null;
+
+  if (postOcrNormalizationModelSlug) {
+    try {
+      await resolveSpecificModelForTask({
+        taskType: "SUMMARIZE",
+        modelSlug: postOcrNormalizationModelSlug,
+      });
+    } catch (error) {
+      if (error instanceof ModelRoutingError) {
+        return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
+      }
+      throw error;
+    }
+  }
+
   const policy = await prisma.taskModelPolicy.upsert({
     where: { taskType },
     update: {
       defaultModelSlug: defaultModelSlug ?? null,
+      systemPromptOverride,
+      postOcrNormalizationModelSlug,
       allowUserOverride,
       fallbackModelSlugs,
       constraints: constraints ?? undefined,
@@ -103,6 +191,8 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     create: {
       taskType,
       defaultModelSlug: defaultModelSlug ?? null,
+      systemPromptOverride,
+      postOcrNormalizationModelSlug,
       allowUserOverride,
       fallbackModelSlugs,
       constraints: constraints ?? undefined,

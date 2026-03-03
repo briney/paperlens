@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/db";
 import { TaskPolicyEditor } from "@/components/admin/task-policy-editor";
+import { isModelCompatibleWithTask } from "@/lib/ai/model-routing";
+import { getBuiltInTaskPrompt } from "@/lib/ai/task-prompts";
 
 const TASK_TYPES = [
   "PARSE_PDF",
@@ -12,16 +14,33 @@ const TASK_TYPES = [
 ] as const;
 
 export default async function AdminTaskPoliciesPage() {
-  const [models, policies] = await Promise.all([
+  const [activeModels, policies] = await Promise.all([
     prisma.modelConfig.findMany({
       where: { isActive: true },
-      select: { slug: true, displayName: true },
+      select: {
+        slug: true,
+        displayName: true,
+        category: true,
+        supportedTasks: true,
+        capabilities: true,
+      },
       orderBy: { displayName: "asc" },
     }),
     prisma.taskModelPolicy.findMany({
       orderBy: { taskType: "asc" },
     }),
   ]);
+
+  const models = activeModels.map((model) => ({
+    slug: model.slug,
+    displayName: model.displayName,
+  }));
+  const normalizationModels = activeModels
+    .filter((model) => isModelCompatibleWithTask(model, "SUMMARIZE"))
+    .map((model) => ({
+      slug: model.slug,
+      displayName: model.displayName,
+    }));
 
   const policyByTask = new Map(policies.map((policy) => [policy.taskType, policy]));
 
@@ -42,10 +61,14 @@ export default async function AdminTaskPoliciesPage() {
               key={taskType}
               taskType={taskType}
               models={models}
+              normalizationModels={normalizationModels}
+              builtInPrompt={getBuiltInTaskPrompt(taskType)}
               initialPolicy={
                 policy
                   ? {
                       defaultModelSlug: policy.defaultModelSlug,
+                      systemPromptOverride: policy.systemPromptOverride,
+                      postOcrNormalizationModelSlug: policy.postOcrNormalizationModelSlug,
                       allowUserOverride: policy.allowUserOverride,
                       fallbackModelSlugs: Array.isArray(policy.fallbackModelSlugs)
                         ? (policy.fallbackModelSlugs.filter(
