@@ -103,9 +103,7 @@ async function handlePdfUpload(request: NextRequest, userId: string) {
       paperId: paper.id,
       type: "PARSE_PDF",
       status: "QUEUED",
-      config: parseModelSlug || summaryModelSlug
-        ? { parseModelSlug, summaryModelSlug }
-        : undefined,
+      config: buildIngestionJobConfig("PDF_PARSING", parseModelSlug, summaryModelSlug),
     },
   });
 
@@ -189,9 +187,7 @@ async function handleUrlSubmission(request: NextRequest, userId: string) {
       paperId: paper.id,
       type: "PARSE_PDF",
       status: "QUEUED",
-      config: parseModelSlug || summaryModelSlug
-        ? { parseModelSlug, summaryModelSlug }
-        : undefined,
+      config: buildIngestionJobConfig("PDF_RETRIEVAL", parseModelSlug, summaryModelSlug),
     },
   });
 
@@ -236,4 +232,23 @@ function normalizeOptionalString(value: string | undefined): string | undefined 
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+}
+
+type IngestionJobStage = "PDF_RETRIEVAL" | "PDF_PARSING";
+
+function buildIngestionJobConfig(
+  stage: IngestionJobStage,
+  parseModelSlug?: string,
+  summaryModelSlug?: string
+): Record<string, string> {
+  const config: Record<string, string> = { stage };
+
+  if (parseModelSlug) {
+    config.parseModelSlug = parseModelSlug;
+  }
+  if (summaryModelSlug) {
+    config.summaryModelSlug = summaryModelSlug;
+  }
+
+  return config;
 }

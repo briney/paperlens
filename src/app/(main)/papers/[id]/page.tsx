@@ -127,10 +127,12 @@ export default async function PaperDetailPage({
         <CardContent>
           <JobStatusPoller
             paperId={paper.id}
+            paperSource={paper.source}
             initialJobs={paper.jobs.map((j) => ({
               id: j.id,
               type: j.type,
               status: j.status,
+              config: j.config,
               error: j.error,
               startedAt: j.startedAt?.toISOString() ?? null,
               completedAt: j.completedAt?.toISOString() ?? null,

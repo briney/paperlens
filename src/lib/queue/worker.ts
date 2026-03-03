@@ -31,6 +31,25 @@ function isCancelledError(error: Error): boolean {
   return error.name === "JobCancelledError";
 }
 
+type IngestionJobStage = "PDF_RETRIEVAL" | "PDF_PARSING";
+
+function buildIngestionJobConfig(
+  stage: IngestionJobStage,
+  parseModelSlug?: string,
+  summaryModelSlug?: string
+): Record<string, string> {
+  const config: Record<string, string> = { stage };
+
+  if (parseModelSlug) {
+    config.parseModelSlug = parseModelSlug;
+  }
+  if (summaryModelSlug) {
+    config.summaryModelSlug = summaryModelSlug;
+  }
+
+  return config;
+}
+
 function getQueueJobId(job: Job): string {
   if (typeof job.id !== "string") {
     throw new Error("Queue job has no string ID");
@@ -159,9 +178,7 @@ async function handleFetchUrl(job: Job<FetchUrlJobData>) {
       paperId,
       type: "PARSE_PDF",
       status: "QUEUED",
-      config: parseModelSlug || summaryModelSlug
-        ? { parseModelSlug, summaryModelSlug }
-        : undefined,
+      config: buildIngestionJobConfig("PDF_PARSING", parseModelSlug, summaryModelSlug),
     },
   });
 

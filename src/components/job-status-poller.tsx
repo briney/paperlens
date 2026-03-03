@@ -6,10 +6,14 @@ import { Badge } from "@/components/ui/badge";
 import { Loader2, CheckCircle2, XCircle, Clock } from "lucide-react";
 import { toast } from "sonner";
 
+type PaperSource = "UPLOAD" | "PDF_URL" | "PAGE_URL";
+type IngestionJobStage = "PDF_RETRIEVAL" | "PDF_PARSING";
+
 interface Job {
   id: string;
   type: string;
   status: "QUEUED" | "PROCESSING" | "COMPLETED" | "FAILED" | "CANCELLED";
+  config?: unknown;
   error?: string | null;
   startedAt?: string | null;
   completedAt?: string | null;
@@ -18,6 +22,7 @@ interface Job {
 
 interface JobStatusPollerProps {
   paperId: string;
+  paperSource: PaperSource;
   initialJobs: Job[];
 }
 
@@ -50,7 +55,6 @@ const STATUS_CONFIG = {
 };
 
 const JOB_TYPE_LABELS: Record<string, string> = {
-  PARSE_PDF: "PDF Parsing",
   SUMMARIZE: "Summarization",
   PEER_REVIEW: "Peer Review",
   CLAIM_VERIFY: "Claim Verification",
@@ -59,7 +63,52 @@ const JOB_TYPE_LABELS: Record<string, string> = {
   CUSTOM: "Custom Analysis",
 };
 
-export function JobStatusPoller({ paperId, initialJobs }: JobStatusPollerProps) {
+function getIngestionStage(config: unknown): IngestionJobStage | null {
+  if (!config || typeof config !== "object" || Array.isArray(config)) {
+    return null;
+  }
+
+  const stage = (config as Record<string, unknown>).stage;
+  if (stage === "PDF_RETRIEVAL" || stage === "PDF_PARSING") {
+    return stage;
+  }
+
+  return null;
+}
+
+function getFallbackRetrievalJobId(jobs: Job[], paperSource: PaperSource): string | null {
+  if (paperSource !== "PDF_URL" && paperSource !== "PAGE_URL") {
+    return null;
+  }
+
+  const parseJobs = jobs
+    .filter((job) => job.type === "PARSE_PDF")
+    .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+
+  return parseJobs[0]?.id ?? null;
+}
+
+function getJobLabel(job: Job, fallbackRetrievalJobId: string | null): string {
+  if (job.type !== "PARSE_PDF") {
+    return JOB_TYPE_LABELS[job.type] ?? job.type;
+  }
+
+  const stage = getIngestionStage(job.config);
+  if (stage === "PDF_RETRIEVAL") {
+    return "PDF Retrieval";
+  }
+  if (stage === "PDF_PARSING") {
+    return "PDF Parsing";
+  }
+
+  if (fallbackRetrievalJobId && job.id === fallbackRetrievalJobId) {
+    return "PDF Retrieval";
+  }
+
+  return "PDF Parsing";
+}
+
+export function JobStatusPoller({ paperId, paperSource, initialJobs }: JobStatusPollerProps) {
   const router = useRouter();
   const [jobs, setJobs] = useState<Job[]>(initialJobs);
   const prevStatusesRef = useRef<Record<string, string>>({});
@@ -83,12 +132,13 @@ export function JobStatusPoller({ paperId, initialJobs }: JobStatusPollerProps) 
       if (!response.ok) return;
       const data = await response.json();
       const newJobs = data.jobs as Job[];
+      const fallbackRetrievalJobId = getFallbackRetrievalJobId(newJobs, paperSource);
 
       // Check for status transitions and fire toasts
       for (const job of newJobs) {
         const prevStatus = prevStatusesRef.current[job.id];
         if (prevStatus && prevStatus !== job.status) {
-          const label = JOB_TYPE_LABELS[job.type] ?? job.type;
+          const label = getJobLabel(job, fallbackRetrievalJobId);
           if (job.status === "COMPLETED") {
             toast.success(`${label} complete`);
           } else if (job.status === "FAILED") {
@@ -119,7 +169,7 @@ export function JobStatusPoller({ paperId, initialJobs }: JobStatusPollerProps) 
     } catch {
       // Silently ignore poll errors
     }
-  }, [paperId, hasActiveJobs, router]);
+  }, [paperId, paperSource, hasActiveJobs, router]);
 
   useEffect(() => {
     if (!hasActiveJobs) return;
@@ -133,6 +183,8 @@ export function JobStatusPoller({ paperId, initialJobs }: JobStatusPollerProps) 
       <p className="text-sm text-muted-foreground">No jobs for this paper.</p>
     );
   }
+
+  const fallbackRetrievalJobId = getFallbackRetrievalJobId(jobs, paperSource);
 
   return (
     <div className="space-y-3">
@@ -158,7 +210,7 @@ export function JobStatusPoller({ paperId, initialJobs }: JobStatusPollerProps) 
               />
               <div>
                 <p className="text-sm font-medium">
-                  {JOB_TYPE_LABELS[job.type] ?? job.type}
+                  {getJobLabel(job, fallbackRetrievalJobId)}
                 </p>
                 {job.error && (
                   <p className="text-xs text-destructive mt-0.5">{job.error}</p>
