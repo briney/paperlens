@@ -9,11 +9,19 @@ import { isAllowedPaperUrl } from "@/lib/validation";
 import { rateLimit } from "@/lib/rate-limit";
 import { ModelRoutingError, resolveTaskModel } from "@/lib/ai/model-routing";
 import { createPaperStoragePath } from "@/lib/storage/path";
+import { getSubmissionAccessError } from "@/lib/user-access";
 
 export const POST = withErrorHandler(async (request: NextRequest) => {
   const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const accessError = getSubmissionAccessError(user);
+  if (accessError) {
+    return NextResponse.json(
+      { error: accessError.error, code: accessError.code },
+      { status: accessError.status }
+    );
   }
 
   const limited = await rateLimit(request, "papers:create", { windowSeconds: 60, maxRequests: 5 });
@@ -58,14 +66,22 @@ async function handlePdfUpload(request: NextRequest, userId: string) {
 
   const parseModelSlug = toOptionalString(formData.get("parseModelSlug"));
   const summaryModelSlug = toOptionalString(formData.get("summaryModelSlug"));
+  let effectiveParseModelSlug = parseModelSlug;
+  let effectiveSummaryModelSlug = summaryModelSlug;
 
   try {
-    if (parseModelSlug) {
-      await resolveTaskModel({ taskType: "PARSE_PDF", requestedModelSlug: parseModelSlug });
-    }
-    if (summaryModelSlug) {
-      await resolveTaskModel({ taskType: "SUMMARIZE", requestedModelSlug: summaryModelSlug });
-    }
+    const resolvedParse = await resolveTaskModel({
+      taskType: "PARSE_PDF",
+      requestedModelSlug: parseModelSlug,
+      userId,
+    });
+    const resolvedSummary = await resolveTaskModel({
+      taskType: "SUMMARIZE",
+      requestedModelSlug: summaryModelSlug,
+      userId,
+    });
+    effectiveParseModelSlug = resolvedParse.model.slug;
+    effectiveSummaryModelSlug = resolvedSummary.model.slug;
   } catch (error) {
     if (error instanceof ModelRoutingError) {
       return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
@@ -103,7 +119,11 @@ async function handlePdfUpload(request: NextRequest, userId: string) {
       paperId: paper.id,
       type: "PARSE_PDF",
       status: "QUEUED",
-      config: buildIngestionJobConfig("PDF_PARSING", parseModelSlug, summaryModelSlug),
+      config: buildIngestionJobConfig(
+        "PDF_PARSING",
+        effectiveParseModelSlug,
+        effectiveSummaryModelSlug
+      ),
     },
   });
 
@@ -112,8 +132,8 @@ async function handlePdfUpload(request: NextRequest, userId: string) {
     paperId: paper.id,
     storagePath,
     userId,
-    parseModelSlug,
-    summaryModelSlug,
+    parseModelSlug: effectiveParseModelSlug,
+    summaryModelSlug: effectiveSummaryModelSlug,
   }, { jobId: job.id });
 
   return NextResponse.json({ paper, job }, { status: 201 });
@@ -130,6 +150,8 @@ async function handleUrlSubmission(request: NextRequest, userId: string) {
   const url = body.url;
   const parseModelSlug = normalizeOptionalString(body.parseModelSlug);
   const summaryModelSlug = normalizeOptionalString(body.summaryModelSlug);
+  let effectiveParseModelSlug = parseModelSlug;
+  let effectiveSummaryModelSlug = summaryModelSlug;
   if (!url || typeof url !== "string") {
     return NextResponse.json({ error: "URL is required" }, { status: 400 });
   }
@@ -154,12 +176,18 @@ async function handleUrlSubmission(request: NextRequest, userId: string) {
   }
 
   try {
-    if (parseModelSlug) {
-      await resolveTaskModel({ taskType: "PARSE_PDF", requestedModelSlug: parseModelSlug });
-    }
-    if (summaryModelSlug) {
-      await resolveTaskModel({ taskType: "SUMMARIZE", requestedModelSlug: summaryModelSlug });
-    }
+    const resolvedParse = await resolveTaskModel({
+      taskType: "PARSE_PDF",
+      requestedModelSlug: parseModelSlug,
+      userId,
+    });
+    const resolvedSummary = await resolveTaskModel({
+      taskType: "SUMMARIZE",
+      requestedModelSlug: summaryModelSlug,
+      userId,
+    });
+    effectiveParseModelSlug = resolvedParse.model.slug;
+    effectiveSummaryModelSlug = resolvedSummary.model.slug;
   } catch (error) {
     if (error instanceof ModelRoutingError) {
       return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
@@ -187,7 +215,11 @@ async function handleUrlSubmission(request: NextRequest, userId: string) {
       paperId: paper.id,
       type: "PARSE_PDF",
       status: "QUEUED",
-      config: buildIngestionJobConfig("PDF_RETRIEVAL", parseModelSlug, summaryModelSlug),
+      config: buildIngestionJobConfig(
+        "PDF_RETRIEVAL",
+        effectiveParseModelSlug,
+        effectiveSummaryModelSlug
+      ),
     },
   });
 
@@ -196,8 +228,8 @@ async function handleUrlSubmission(request: NextRequest, userId: string) {
     paperId: paper.id,
     url,
     userId,
-    parseModelSlug,
-    summaryModelSlug,
+    parseModelSlug: effectiveParseModelSlug,
+    summaryModelSlug: effectiveSummaryModelSlug,
   }, { jobId: job.id });
 
   return NextResponse.json({ paper, job }, { status: 201 });
@@ -213,6 +245,7 @@ export const GET = withErrorHandler(async () => {
     where: { userId: user.id },
     include: {
       jobs: {
+        where: { isArchivedByAdmin: false },
         orderBy: { createdAt: "desc" },
         take: 1,
       },

@@ -44,8 +44,18 @@ export default function UploadPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [models, setModels] = useState<Model[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>("");
+  const [approvalStatus, setApprovalStatus] = useState<string | null>(null);
 
   useEffect(() => {
+    fetch("/api/auth/me")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data?.user?.approvalStatus && typeof data.user.approvalStatus === "string") {
+          setApprovalStatus(data.user.approvalStatus);
+        }
+      })
+      .catch(() => {});
+
     fetch("/api/models?taskType=SUMMARIZE")
       .then((res) => res.json())
       .then((data) => {
@@ -77,6 +87,12 @@ export default function UploadPage() {
   };
 
   const uploadFile = async (file: File) => {
+    if (approvalStatus && approvalStatus !== "APPROVED") {
+      setErrorMessage("Your account is pending admin approval.");
+      setUploadState("error");
+      return;
+    }
+
     const error = validateFile(file);
     if (error) {
       setErrorMessage(error);
@@ -125,6 +141,12 @@ export default function UploadPage() {
   };
 
   const submitUrl = async () => {
+    if (approvalStatus && approvalStatus !== "APPROVED") {
+      setErrorMessage("Your account is pending admin approval.");
+      setUploadState("error");
+      return;
+    }
+
     if (!url.trim()) return;
 
     try {
@@ -194,6 +216,7 @@ export default function UploadPage() {
   }, []);
 
   const isUploading = uploadState === "uploading";
+  const isSubmissionBlocked = approvalStatus !== null && approvalStatus !== "APPROVED";
 
   return (
     <div className="space-y-6">
@@ -203,6 +226,14 @@ export default function UploadPage() {
           Upload a PDF or paste a link to a scientific paper.
         </p>
       </div>
+
+      {isSubmissionBlocked && (
+        <Alert className="max-w-2xl">
+          <AlertDescription>
+            Your account is pending admin approval. Uploads and analysis jobs are disabled.
+          </AlertDescription>
+        </Alert>
+      )}
 
       {uploadState === "error" && errorMessage && (
         <Alert variant="destructive" className="max-w-2xl">
@@ -240,11 +271,11 @@ export default function UploadPage() {
               dragOver
                 ? "border-primary bg-primary/5"
                 : "border-muted-foreground/25 hover:border-muted-foreground/50"
-            } ${isUploading ? "pointer-events-none opacity-60" : ""}`}
+            } ${isUploading || isSubmissionBlocked ? "pointer-events-none opacity-60" : ""}`}
             onDrop={handleDrop}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
-            onClick={() => !isUploading && fileInputRef.current?.click()}
+            onClick={() => !isUploading && !isSubmissionBlocked && fileInputRef.current?.click()}
           >
             <input
               ref={fileInputRef}
@@ -255,7 +286,7 @@ export default function UploadPage() {
                 const file = e.target.files?.[0];
                 if (file) uploadFile(file);
               }}
-              disabled={isUploading}
+              disabled={isUploading || isSubmissionBlocked}
             />
 
             {isUploading && selectedFile ? (
@@ -300,14 +331,14 @@ export default function UploadPage() {
                 placeholder="https://arxiv.org/abs/2401.12345"
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
-                disabled={isUploading}
+                disabled={isUploading || isSubmissionBlocked}
                 className="pl-9"
                 onKeyDown={(e) => {
                   if (e.key === "Enter") submitUrl();
                 }}
               />
             </div>
-            <Button onClick={submitUrl} disabled={isUploading || !url.trim()}>
+            <Button onClick={submitUrl} disabled={isUploading || isSubmissionBlocked || !url.trim()}>
               {isUploading && !selectedFile ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : null}

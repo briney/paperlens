@@ -36,6 +36,9 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
       if (error.message === "Account is deactivated") {
         return NextResponse.json({ error: error.message }, { status: 403 });
       }
+      if (error.message === "Account has been removed") {
+        return NextResponse.json({ error: error.message }, { status: 403 });
+      }
     }
     throw error; // re-throw unexpected errors to withErrorHandler
   }

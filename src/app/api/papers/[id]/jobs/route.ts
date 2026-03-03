@@ -29,7 +29,7 @@ export const GET = withErrorHandler(async (
   }
 
   const jobs = await prisma.job.findMany({
-    where: { paperId: id },
+    where: { paperId: id, isArchivedByAdmin: false },
     orderBy: { createdAt: "desc" },
   });
 

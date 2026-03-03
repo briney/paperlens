@@ -15,14 +15,29 @@ model User {
   name         String?
   role         Role     @default(USER)
   isActive     Boolean  @default(true)
+  approvalStatus UserApprovalStatus @default(PENDING)
+  approvedAt    DateTime?
+  approvedById  String?
+  approvedBy    User?   @relation("UserApprovals", fields: [approvedById], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  approvedUsers User[]  @relation("UserApprovals")
+  deletedAt     DateTime?
+  deletedById   String?
+  deletedBy     User?   @relation("UserDeletions", fields: [deletedById], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  deletedUsers  User[]  @relation("UserDeletions")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   papers       Paper[]
-  jobs         Job[]
+  jobs         Job[]    @relation("UserJobs")
+  archivedJobs Job[]    @relation("JobArchivedByAdmin")
   apiTokens    ApiToken[]
   usageRecords UsageRecord[]
   quota        UserQuota?
+  modelAllowlist UserModelAllowlist[] @relation("UserModelAllowlistEntries")
+  modelAllowlistCreated UserModelAllowlist[] @relation("UserModelAllowlistCreatedBy")
+
+  @@index([approvalStatus, deletedAt])
+  @@index([deletedAt])
 }
 
 model ApiToken {
@@ -48,6 +63,12 @@ model UserQuota {
 enum Role {
   USER
   ADMIN
+}
+
+enum UserApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
 }
 
 enum Tier {
@@ -85,11 +106,15 @@ enum SourceType {
 model Job {
   id          String    @id @default(cuid())
   userId      String
-  user        User      @relation(fields: [userId], references: [id])
+  user        User      @relation("UserJobs", fields: [userId], references: [id])
   paperId     String
   paper       Paper     @relation(fields: [paperId], references: [id])
   type        JobType
   status      JobStatus @default(QUEUED)
+  isArchivedByAdmin Boolean @default(false)
+  archivedAt  DateTime?
+  archivedById String?
+  archivedBy  User?     @relation("JobArchivedByAdmin", fields: [archivedById], references: [id], onDelete: SetNull, onUpdate: Cascade)
   config      Json? // model selection, parameters, etc.
   result      Json? // output metadata
   error       String?
@@ -98,6 +123,9 @@ model Job {
   createdAt   DateTime  @default(now())
 
   analysis Analysis?
+
+  @@index([userId, isArchivedByAdmin, createdAt])
+  @@index([paperId, isArchivedByAdmin, createdAt])
 }
 
 enum JobType {
@@ -174,6 +202,21 @@ model ModelConfig {
 
   taskDefaults TaskModelPolicy[] @relation("TaskDefaultModel")
   postOcrNormalizationPolicies TaskModelPolicy[] @relation("TaskPostOcrNormalizationModel")
+  userAllowlistEntries UserModelAllowlist[]
+}
+
+model UserModelAllowlist {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation("UserModelAllowlistEntries", fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  modelSlug String
+  model     ModelConfig @relation(fields: [modelSlug], references: [slug], onDelete: Cascade, onUpdate: Cascade)
+  createdAt DateTime @default(now())
+  createdById String?
+  createdBy User?    @relation("UserModelAllowlistCreatedBy", fields: [createdById], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  @@unique([userId, modelSlug])
+  @@index([modelSlug])
 }
 
 enum ModelCategory {

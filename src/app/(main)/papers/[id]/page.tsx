@@ -30,13 +30,14 @@ export default async function PaperDetailPage({
 }) {
   const user = await getCurrentUser();
   if (!user) notFound();
+  const isApproved = user.approvalStatus === "APPROVED";
 
   const { id } = await params;
 
   const paper = await prisma.paper.findFirst({
     where: { id, userId: user.id },
     include: {
-      jobs: { orderBy: { createdAt: "desc" } },
+      jobs: { where: { isArchivedByAdmin: false }, orderBy: { createdAt: "desc" } },
       analyses: { orderBy: { createdAt: "desc" } },
     },
   });
@@ -173,9 +174,11 @@ export default async function PaperDetailPage({
               ) : isParsed ? (
                 <div className="space-y-3">
                   <p className="text-sm text-muted-foreground">
-                    No summary yet. Run the summarizer to generate one.
+                    {isApproved
+                      ? "No summary yet. Run the summarizer to generate one."
+                      : "No summary yet. Your account is pending admin approval, so analysis is disabled."}
                   </p>
-                  <AnalyzeButton paperId={paper.id} />
+                  {isApproved && <AnalyzeButton paperId={paper.id} />}
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground">
@@ -239,7 +242,7 @@ export default async function PaperDetailPage({
       </Tabs>
 
       {/* Re-analysis section */}
-      {isParsed && summaryAnalysis && (
+      {isParsed && summaryAnalysis && isApproved && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Run Additional Analysis</CardTitle>

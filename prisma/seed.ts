@@ -41,11 +41,17 @@ async function main() {
         passwordHash,
         name,
         role: "ADMIN",
+        approvalStatus: "APPROVED",
+        approvedAt: new Date(),
       },
       update: {
         role: "ADMIN",
         passwordHash,
         name,
+        approvalStatus: "APPROVED",
+        approvedAt: new Date(),
+        deletedAt: null,
+        deletedById: null,
       },
     });
 

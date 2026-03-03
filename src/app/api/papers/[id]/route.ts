@@ -22,7 +22,7 @@ export const GET = withErrorHandler(async (
   const paper = await prisma.paper.findFirst({
     where: { id, userId: user.id },
     include: {
-      jobs: { orderBy: { createdAt: "desc" } },
+      jobs: { where: { isArchivedByAdmin: false }, orderBy: { createdAt: "desc" } },
       analyses: { orderBy: { createdAt: "desc" } },
     },
   });
@@ -68,6 +68,24 @@ export const DELETE = withErrorHandler(async (
   }
   if (paper.markupPath) {
     await storage.delete(paper.markupPath).catch((err) => console.error("Failed to delete markup file:", err));
+  }
+
+  const metadata = paper.metadata && typeof paper.metadata === "object" && !Array.isArray(paper.metadata)
+    ? paper.metadata as Record<string, unknown>
+    : null;
+  const parseArtifacts = metadata?.parseArtifacts;
+  const figureAssetPaths = parseArtifacts
+    && typeof parseArtifacts === "object"
+    && !Array.isArray(parseArtifacts)
+    && Array.isArray((parseArtifacts as Record<string, unknown>).figureAssetPaths)
+      ? (parseArtifacts as { figureAssetPaths: unknown[] }).figureAssetPaths
+      : [];
+
+  for (const assetPath of figureAssetPaths) {
+    if (typeof assetPath !== "string" || assetPath.trim().length === 0) continue;
+    await storage.delete(assetPath).catch((err) =>
+      console.error("Failed to delete parsed figure asset:", err)
+    );
   }
 
   return NextResponse.json({ success: true });

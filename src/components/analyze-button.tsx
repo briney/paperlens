@@ -34,8 +34,18 @@ export function AnalyzeButton({
   const [models, setModels] = useState<Model[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>("");
   const [loading, setLoading] = useState(false);
+  const [isSubmissionApproved, setIsSubmissionApproved] = useState(true);
 
   useEffect(() => {
+    fetch("/api/auth/me")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data?.user?.approvalStatus && data.user.approvalStatus !== "APPROVED") {
+          setIsSubmissionApproved(false);
+        }
+      })
+      .catch(() => {});
+
     fetch(`/api/models?taskType=${encodeURIComponent(analyzerType)}`)
       .then((res) => res.json())
       .then((data) => {
@@ -51,6 +61,11 @@ export function AnalyzeButton({
   }, [analyzerType]);
 
   const handleAnalyze = async () => {
+    if (!isSubmissionApproved) {
+      toast.error("Your account is pending admin approval.");
+      return;
+    }
+
     setLoading(true);
     try {
       const response = await fetch(`/api/papers/${paperId}/analyze`, {
@@ -94,13 +109,13 @@ export function AnalyzeButton({
           </SelectContent>
         </Select>
       )}
-      <Button onClick={handleAnalyze} disabled={loading}>
+      <Button onClick={handleAnalyze} disabled={loading || !isSubmissionApproved}>
         {loading ? (
           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
         ) : (
           <Sparkles className="mr-2 h-4 w-4" />
         )}
-        {label}
+        {isSubmissionApproved ? label : "Awaiting approval"}
       </Button>
     </div>
   );

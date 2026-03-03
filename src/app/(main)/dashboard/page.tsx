@@ -15,6 +15,7 @@ import { redirect } from "next/navigation";
 export default async function DashboardPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
+  const isApproved = user.approvalStatus === "APPROVED";
 
   const [paperCount, completedAnalyses, recentPapers] = await Promise.all([
     prisma.paper.count({ where: { userId: user.id } }),
@@ -24,7 +25,7 @@ export default async function DashboardPage() {
     prisma.paper.findMany({
       where: { userId: user.id },
       include: {
-        jobs: { orderBy: { createdAt: "desc" }, take: 1 },
+        jobs: { where: { isArchivedByAdmin: false }, orderBy: { createdAt: "desc" }, take: 1 },
       },
       orderBy: { createdAt: "desc" },
       take: 5,
@@ -39,6 +40,14 @@ export default async function DashboardPage() {
           Welcome back. Here&apos;s an overview of your activity.
         </p>
       </div>
+
+      {!isApproved && (
+        <Card>
+          <CardContent className="py-4 text-sm text-muted-foreground">
+            Your account is pending admin approval. Upload and analysis actions are disabled until approved.
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
@@ -67,9 +76,15 @@ export default async function DashboardPage() {
             <Upload className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <Button asChild size="sm">
-              <Link href="/upload">Upload a paper</Link>
-            </Button>
+            {isApproved ? (
+              <Button asChild size="sm">
+                <Link href="/upload">Upload a paper</Link>
+              </Button>
+            ) : (
+              <Button size="sm" disabled>
+                Awaiting approval
+              </Button>
+            )}
           </CardContent>
         </Card>
       </div>

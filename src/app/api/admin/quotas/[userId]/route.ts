@@ -4,6 +4,8 @@ import { requireAdmin } from "@/lib/admin";
 import { withErrorHandler } from "@/lib/api-utils";
 import { isValidCuid } from "@/lib/validation";
 
+const VALID_TIERS = new Set(["FREE", "PRO", "ADMIN"]);
+
 export const PUT = withErrorHandler(async (
   request: NextRequest,
   { params }: { params: Promise<Record<string, string | string[]>> }
@@ -19,6 +21,17 @@ export const PUT = withErrorHandler(async (
   const body = await request.json();
 
   const { tier, maxPapersPerDay, maxPapersPerMonth, maxTokensPerMonth } = body;
+  if (tier !== undefined && (typeof tier !== "string" || !VALID_TIERS.has(tier))) {
+    return NextResponse.json({ error: "Invalid tier" }, { status: 400 });
+  }
+
+  const user = await prisma.user.findFirst({
+    where: { id: userId, deletedAt: null },
+    select: { id: true },
+  });
+  if (!user) {
+    return NextResponse.json({ error: "User not found" }, { status: 404 });
+  }
 
   const quota = await prisma.userQuota.upsert({
     where: { userId },

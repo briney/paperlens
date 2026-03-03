@@ -34,6 +34,7 @@ export interface ModelInvocationConfig {
 interface ResolveTaskModelArgs {
   taskType: JobType;
   requestedModelSlug?: string;
+  userId?: string;
 }
 
 interface ResolveSpecificModelForTaskArgs {
@@ -127,6 +128,23 @@ function isJobType(value: string): value is JobType {
   ].includes(value);
 }
 
+async function getUserAllowlist(userId?: string): Promise<Set<string> | null> {
+  if (!userId) return null;
+
+  const entries = await prisma.userModelAllowlist.findMany({
+    where: { userId },
+    select: { modelSlug: true },
+  });
+
+  if (entries.length === 0) return null;
+  return new Set(entries.map((entry) => entry.modelSlug));
+}
+
+function isModelAllowedForUser(modelSlug: string, userAllowlist: Set<string> | null): boolean {
+  if (!userAllowlist) return true;
+  return userAllowlist.has(modelSlug);
+}
+
 export function isModelCompatibleWithTask(
   model: Pick<ModelConfig, "supportedTasks" | "category" | "capabilities">,
   taskType: JobType,
@@ -217,9 +235,10 @@ async function getLegacyDefaultModel(taskType: JobType) {
 export async function resolveTaskModel(
   args: ResolveTaskModelArgs
 ): Promise<{ model: ModelConfig; policy: TaskModelPolicy | null }> {
-  const { taskType, requestedModelSlug } = args;
+  const { taskType, requestedModelSlug, userId } = args;
   const policy = await getTaskPolicy(taskType);
   const constraints = getConstraints(policy);
+  const userAllowlist = await getUserAllowlist(userId);
 
   if (requestedModelSlug) {
     const requested = await prisma.modelConfig.findUnique({
@@ -252,11 +271,22 @@ export async function resolveTaskModel(
       );
     }
 
+    if (!isModelAllowedForUser(requested.slug, userAllowlist)) {
+      throw new ModelRoutingError(
+        "MODEL_NOT_ALLOWED_FOR_USER",
+        `Model \"${requested.slug}\" is not enabled for this user.`,
+        403
+      );
+    }
+
     return { model: requested, policy };
   }
 
   if (policy?.defaultModel && policy.defaultModel.isActive) {
-    if (isModelCompatibleWithTask(policy.defaultModel, taskType, constraints)) {
+    if (
+      isModelCompatibleWithTask(policy.defaultModel, taskType, constraints) &&
+      isModelAllowedForUser(policy.defaultModel.slug, userAllowlist)
+    ) {
       return { model: policy.defaultModel, policy };
     }
   }
@@ -270,14 +300,21 @@ export async function resolveTaskModel(
     for (const slug of fallbackSlugs) {
       const candidate = fallbackModels.find((m) => m.slug === slug);
       if (!candidate) continue;
-      if (isModelCompatibleWithTask(candidate, taskType, constraints)) {
+      if (
+        isModelCompatibleWithTask(candidate, taskType, constraints) &&
+        isModelAllowedForUser(candidate.slug, userAllowlist)
+      ) {
         return { model: candidate, policy };
       }
     }
   }
 
   const legacyDefault = await getLegacyDefaultModel(taskType);
-  if (legacyDefault && isModelCompatibleWithTask(legacyDefault, taskType, constraints)) {
+  if (
+    legacyDefault &&
+    isModelCompatibleWithTask(legacyDefault, taskType, constraints) &&
+    isModelAllowedForUser(legacyDefault.slug, userAllowlist)
+  ) {
     return { model: legacyDefault, policy };
   }
 
@@ -288,10 +325,19 @@ export async function resolveTaskModel(
 
   const firstCompatible = allActive.find((model) =>
     isModelCompatibleWithTask(model, taskType, constraints)
+    && isModelAllowedForUser(model.slug, userAllowlist)
   );
 
   if (firstCompatible) {
     return { model: firstCompatible, policy };
+  }
+
+  if (userAllowlist) {
+    throw new ModelRoutingError(
+      "MODEL_NOT_ALLOWED_FOR_USER",
+      `No enabled model is available for task ${taskType} for this user.`,
+      403
+    );
   }
 
   throw new ModelRoutingError(
@@ -315,10 +361,12 @@ export async function resolveInvocationForTask(args: ResolveTaskModelArgs): Prom
 }
 
 export async function listCompatibleModelsForTask(
-  taskType: JobType
+  taskType: JobType,
+  userId?: string
 ): Promise<CompatibleTaskModel[]> {
   const policy = await getTaskPolicy(taskType);
   const constraints = getConstraints(policy);
+  const userAllowlist = await getUserAllowlist(userId);
 
   const models = await prisma.modelConfig.findMany({
     where: { isActive: true },
@@ -338,7 +386,10 @@ export async function listCompatibleModelsForTask(
     : (await getLegacyDefaultModel(taskType))?.slug;
   const taskDefaultSlug = policy?.defaultModelSlug ?? legacyDefault ?? null;
   const compatible = models
-    .filter((model) => isModelCompatibleWithTask(model, taskType, constraints))
+    .filter((model) =>
+      isModelCompatibleWithTask(model, taskType, constraints)
+      && isModelAllowedForUser(model.slug, userAllowlist)
+    )
     .map((model) => ({
       slug: model.slug,
       displayName: model.displayName,

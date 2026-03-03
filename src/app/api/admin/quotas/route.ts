@@ -8,6 +8,7 @@ export const GET = withErrorHandler(async () => {
   if (check.error) return check.error;
 
   const users = await prisma.user.findMany({
+    where: { deletedAt: null },
     orderBy: { createdAt: "desc" },
     select: {
       id: true,

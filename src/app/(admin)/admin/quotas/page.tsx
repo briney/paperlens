@@ -14,6 +14,7 @@ import { TIER_DEFAULTS } from "@/lib/quota-defaults";
 
 export default async function AdminQuotasPage() {
   const users = await prisma.user.findMany({
+    where: { deletedAt: null },
     orderBy: { createdAt: "desc" },
     select: {
       id: true,

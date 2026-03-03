@@ -11,6 +11,7 @@ export interface AuthUser {
   email: string;
   name: string | null;
   role: string;
+  approvalStatus: string;
 }
 
 export async function registerUser(
@@ -18,8 +19,14 @@ export async function registerUser(
   password: string,
   name?: string
 ): Promise<AuthUser> {
-  const existing = await prisma.user.findUnique({ where: { email } });
+  const existing = await prisma.user.findUnique({
+    where: { email },
+    select: { id: true, deletedAt: true },
+  });
   if (existing) {
+    if (existing.deletedAt) {
+      throw new Error("This account has been removed. Contact an admin.");
+    }
     throw new Error("A user with this email already exists");
   }
 
@@ -29,8 +36,9 @@ export async function registerUser(
       email,
       passwordHash,
       name,
+      approvalStatus: "PENDING",
     },
-    select: { id: true, email: true, name: true, role: true },
+    select: { id: true, email: true, name: true, role: true, approvalStatus: true },
   });
 
   await setAuthCookies({ userId: user.id, role: user.role });
@@ -50,11 +58,17 @@ export async function loginUser(
       role: true,
       passwordHash: true,
       isActive: true,
+      approvalStatus: true,
+      deletedAt: true,
     },
   });
 
   if (!user || !user.passwordHash) {
     throw new Error("Invalid email or password");
+  }
+
+  if (user.deletedAt) {
+    throw new Error("Account has been removed");
   }
 
   if (!user.isActive) {
@@ -67,7 +81,13 @@ export async function loginUser(
   }
 
   await setAuthCookies({ userId: user.id, role: user.role });
-  return { id: user.id, email: user.email, name: user.name, role: user.role };
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    role: user.role,
+    approvalStatus: user.approvalStatus,
+  };
 }
 
 export async function getCurrentUser(): Promise<AuthUser | null> {
@@ -105,8 +125,8 @@ async function getUserFromPayload(
   payload: TokenPayload
 ): Promise<AuthUser | null> {
   const user = await prisma.user.findUnique({
-    where: { id: payload.userId, isActive: true },
-    select: { id: true, email: true, name: true, role: true },
+    where: { id: payload.userId, isActive: true, deletedAt: null },
+    select: { id: true, email: true, name: true, role: true, approvalStatus: true },
   });
   return user;
 }

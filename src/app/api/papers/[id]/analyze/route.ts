@@ -7,6 +7,7 @@ import { withErrorHandler } from "@/lib/api-utils";
 import { isValidCuid } from "@/lib/validation";
 import { rateLimit } from "@/lib/rate-limit";
 import { ModelRoutingError, resolveTaskModel } from "@/lib/ai/model-routing";
+import { getSubmissionAccessError } from "@/lib/user-access";
 
 export const POST = withErrorHandler(async (
   request: NextRequest,
@@ -15,6 +16,13 @@ export const POST = withErrorHandler(async (
   const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const accessError = getSubmissionAccessError(user);
+  if (accessError) {
+    return NextResponse.json(
+      { error: accessError.error, code: accessError.code },
+      { status: accessError.status }
+    );
   }
 
   const limited = await rateLimit(request, "papers:analyze", { windowSeconds: 60, maxRequests: 5 });
@@ -60,19 +68,20 @@ export const POST = withErrorHandler(async (
     );
   }
 
-  // Validate model if specified
-  if (modelSlug) {
-    try {
-      await resolveTaskModel({
-        taskType: analyzer.taskType,
-        requestedModelSlug: modelSlug,
-      });
-    } catch (error) {
-      if (error instanceof ModelRoutingError) {
-        return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
-      }
-      throw error;
+  // Validate model selection and user-level model access
+  let resolvedModelSlug: string | undefined;
+  try {
+    const resolved = await resolveTaskModel({
+      taskType: analyzer.taskType,
+      requestedModelSlug: modelSlug,
+      userId: user.id,
+    });
+    resolvedModelSlug = resolved.model.slug;
+  } catch (error) {
+    if (error instanceof ModelRoutingError) {
+      return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
     }
+    throw error;
   }
 
   // Create job record
@@ -82,7 +91,7 @@ export const POST = withErrorHandler(async (
       paperId: id,
       type: analyzer.taskType,
       status: "QUEUED",
-      config: modelSlug ? { modelSlug } : undefined,
+      config: resolvedModelSlug ? { modelSlug: resolvedModelSlug } : undefined,
     },
   });
 
@@ -93,7 +102,7 @@ export const POST = withErrorHandler(async (
       paperId: id,
       jobId: job.id,
       analyzerType,
-      modelSlug,
+      modelSlug: resolvedModelSlug,
       userId: user.id,
     },
     { jobId: job.id }

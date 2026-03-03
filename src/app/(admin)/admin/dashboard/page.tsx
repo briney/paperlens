@@ -33,7 +33,7 @@ export default async function AdminDashboardPage() {
     monthUsage,
     recentJobs,
   ] = await Promise.all([
-    prisma.user.count(),
+    prisma.user.count({ where: { deletedAt: null } }),
     prisma.paper.count(),
     prisma.modelConfig.count({ where: { isActive: true } }),
     prisma.job.groupBy({

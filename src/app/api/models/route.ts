@@ -16,7 +16,7 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
   const taskType = parseTaskType(request.nextUrl.searchParams.get("taskType")) ?? "SUMMARIZE";
 
   try {
-    const models = await listCompatibleModelsForTask(taskType);
+    const models = await listCompatibleModelsForTask(taskType, user.id);
     return NextResponse.json({ models, taskType });
   } catch (error) {
     if (error instanceof ModelRoutingError) {

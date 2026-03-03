@@ -39,6 +39,9 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
     if (error instanceof Error && error.message === "A user with this email already exists") {
       return NextResponse.json({ error: error.message }, { status: 409 });
     }
+    if (error instanceof Error && error.message === "This account has been removed. Contact an admin.") {
+      return NextResponse.json({ error: error.message }, { status: 403 });
+    }
     throw error;
   }
 });

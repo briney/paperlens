@@ -27,6 +27,7 @@ import { TIER_DEFAULTS, type TierName } from "@/lib/quota-defaults";
 interface QuotaFormDialogProps {
   userId: string;
   userName: string | null;
+  buttonLabel?: string;
   quota: {
     tier: string;
     maxPapersPerDay: number;
@@ -35,7 +36,7 @@ interface QuotaFormDialogProps {
   } | null;
 }
 
-export function QuotaFormDialog({ userId, userName, quota }: QuotaFormDialogProps) {
+export function QuotaFormDialog({ userId, userName, buttonLabel, quota }: QuotaFormDialogProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -96,8 +97,9 @@ export function QuotaFormDialog({ userId, userName, quota }: QuotaFormDialogProp
   return (
     <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (v) resetForm(); }}>
       <DialogTrigger asChild>
-        <Button variant="ghost" size="sm">
+        <Button variant={buttonLabel ? "outline" : "ghost"} size="sm">
           <Pencil className="h-3.5 w-3.5" />
+          {buttonLabel ? <span className="ml-1">{buttonLabel}</span> : null}
         </Button>
       </DialogTrigger>
       <DialogContent>

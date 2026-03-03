@@ -29,11 +29,13 @@ const SOURCE_LABELS: Record<string, string> = {
 export default async function PapersPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
+  const isApproved = user.approvalStatus === "APPROVED";
 
   const papers = await prisma.paper.findMany({
     where: { userId: user.id },
     include: {
       jobs: {
+        where: { isArchivedByAdmin: false },
         orderBy: { createdAt: "desc" },
         take: 1,
       },
@@ -53,13 +55,27 @@ export default async function PapersPage() {
             All your uploaded papers and analyses.
           </p>
         </div>
-        <Button asChild>
-          <Link href="/upload">
-            <Upload className="mr-2 h-4 w-4" />
-            Upload Paper
-          </Link>
-        </Button>
+        {isApproved ? (
+          <Button asChild>
+            <Link href="/upload">
+              <Upload className="mr-2 h-4 w-4" />
+              Upload Paper
+            </Link>
+          </Button>
+        ) : (
+          <Button disabled>
+            Awaiting approval
+          </Button>
+        )}
       </div>
+
+      {!isApproved && (
+        <Card>
+          <CardContent className="py-4 text-sm text-muted-foreground">
+            Your account is pending admin approval. Upload and analysis actions are disabled until approved.
+          </CardContent>
+        </Card>
+      )}
 
       {papers.length === 0 ? (
         <Card>
@@ -69,12 +85,16 @@ export default async function PapersPage() {
             <p className="text-sm text-muted-foreground mb-4">
               Upload your first paper to get started.
             </p>
-            <Button asChild>
-              <Link href="/upload">
-                <Upload className="mr-2 h-4 w-4" />
-                Upload Paper
-              </Link>
-            </Button>
+            {isApproved ? (
+              <Button asChild>
+                <Link href="/upload">
+                  <Upload className="mr-2 h-4 w-4" />
+                  Upload Paper
+                </Link>
+              </Button>
+            ) : (
+              <Button disabled>Awaiting approval</Button>
+            )}
           </CardContent>
         </Card>
       ) : (
