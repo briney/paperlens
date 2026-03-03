@@ -1,5 +1,6 @@
 import type { StorageProvider } from "./types";
 import { LocalStorageProvider } from "./local";
+import { AzureBlobStorageProvider } from "./azure";
 
 export type { StorageProvider } from "./types";
 
@@ -9,8 +10,6 @@ export function getStorage(): StorageProvider {
   if (_storage) return _storage;
 
   if (process.env.AZURE_STORAGE_CONNECTION_STRING) {
-    // Lazy-load Azure provider only when configured
-    const { AzureBlobStorageProvider } = require("./azure");
     _storage = new AzureBlobStorageProvider();
   } else {
     _storage = new LocalStorageProvider();

@@ -8,7 +8,6 @@ import {
   Library,
   Settings,
   FileText,
-  Search,
 } from "lucide-react";
 import {
   CommandDialog,
@@ -36,7 +35,6 @@ export function CommandMenu() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [papers, setPapers] = useState<Paper[]>([]);
-  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -52,7 +50,6 @@ export function CommandMenu() {
   // Fetch papers when dialog opens
   useEffect(() => {
     if (!open) return;
-    setLoading(true);
     fetch("/api/papers")
       .then((res) => res.json())
       .then((data) => {
@@ -63,8 +60,7 @@ export function CommandMenu() {
           }))
         );
       })
-      .catch(() => setPapers([]))
-      .finally(() => setLoading(false));
+      .catch(() => setPapers([]));
   }, [open]);
 
   const runCommand = useCallback(
@@ -79,9 +75,7 @@ export function CommandMenu() {
     <CommandDialog open={open} onOpenChange={setOpen}>
       <CommandInput placeholder="Search papers or navigate..." />
       <CommandList>
-        <CommandEmpty>
-          {loading ? "Loading..." : "No results found."}
-        </CommandEmpty>
+        <CommandEmpty>No results found.</CommandEmpty>
         <CommandGroup heading="Navigation">
           {NAV_ITEMS.map((item) => {
             const Icon = item.icon;

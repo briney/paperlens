@@ -1,7 +1,4 @@
-import {
-  BlobServiceClient,
-  StorageSharedKeyCredential,
-} from "@azure/storage-blob";
+import { BlobServiceClient } from "@azure/storage-blob";
 import type { StorageProvider } from "./types";
 
 export class AzureBlobStorageProvider implements StorageProvider {

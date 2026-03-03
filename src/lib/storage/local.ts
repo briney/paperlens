@@ -25,8 +25,9 @@ export class LocalStorageProvider implements StorageProvider {
   async upload(
     storagePath: string,
     data: Buffer,
-    _contentType?: string
+    contentType?: string
   ): Promise<string> {
+    void contentType;
     const fullPath = this.resolvePath(storagePath);
     await this.ensureDir(fullPath);
     await fs.writeFile(fullPath, data);
